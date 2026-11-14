@@ -8,3 +8,5 @@ Flow: **New → Ready → Delivered**. Create, edit, move forward/back, delete. 
 - Desktop (Windows/Mac): Electron wrapper. `npm install && npm start` to run, `npm run dist` to build. The `Build desktop apps` workflow produces the installers.
 
 Export: the **Export to Excel** button downloads all orders as a `.csv` that opens directly in Excel.
+
+Products: save your menu under **📋 Products**, then build orders by picking a product and a quantity for each line.

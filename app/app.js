@@ -1,13 +1,53 @@
 const KEY = 'biteflow.v1';
 let state = load();
 function load() {
-  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && Array.isArray(s.orders)) { s.orders.forEach(o => { if (o.status === 'completed') o.status = 'delivered'; }); return s; } } catch (e) {}
-  return { next: 1, orders: [] };
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && Array.isArray(s.orders)) {
+      s.products = Array.isArray(s.products) ? s.products : [];
+      s.orders.forEach(o => {
+        if (o.status === 'completed') o.status = 'delivered';
+        o.items = o.items.map(i => {
+          if (typeof i !== 'string') return i;
+          const m = i.match(/^\s*(\d+)\s*x\s*(.+)$/i);
+          return m ? { name: m[2].trim(), qty: +m[1] } : { name: i, qty: 1 };
+        });
+      });
+      return s;
+    } } catch (e) {}
+  return { next: 1, orders: [], products: [] };
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const $ = (s, r = document) => r.querySelector(s);
 const FLOW = ['new', 'ready', 'delivered'];
 const NEXT_LABEL = { new: 'Mark ready ✓', ready: 'Delivered ✓' };
+function addLine(item) {
+  const names = state.products.slice();
+  if (item.name && !names.includes(item.name)) names.push(item.name);
+  const row = document.createElement('div');
+  row.className = 'line';
+  row.innerHTML = `<select><option value="">Select product…</option>${names.map(n => `<option${n === item.name ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>
+    <input type="number" min="1" value="${item.qty}" aria-label="Quantity"><button type="button" class="x" title="Remove">✕</button>`;
+  $('.x', row).onclick = () => row.remove();
+  $('#lines').appendChild(row);
+}
+$('#addLine').onclick = () => addLine({ name: '', qty: 1 });
+
+const pdlg = $('#pdlg');
+function renderProducts() {
+  $('#plist').innerHTML = state.products.map((n, i) => `<li><span>${esc(n)}</span><button data-i="${i}">Remove</button></li>`).join('') || '<li class="empty">No products yet</li>';
+}
+$('#prodBtn').onclick = () => { renderProducts(); pdlg.showModal(); $('#pName').focus(); };
+$('#pClose').onclick = () => pdlg.close();
+$('#pform').onsubmit = e => {
+  e.preventDefault();
+  const n = $('#pName').value.trim();
+  if (n && !state.products.some(p => p.toLowerCase() === n.toLowerCase())) { state.products.push(n); save(); renderProducts(); }
+  $('#pName').value = ''; $('#pName').focus();
+};
+$('#plist').onclick = e => {
+  const b = e.target.closest('button[data-i]'); if (!b) return;
+  state.products.splice(+b.dataset.i, 1); save(); renderProducts();
+};
+
 const dlg = $('#dlg'), form = $('#form');
 let editingId = null;
 
@@ -24,7 +64,7 @@ function render() {
   }
 }
 function card(o) {
-  const items = o.items.map(i => `<li>${esc(i)}</li>`).join('');
+  const items = o.items.map(i => `<li><b>${i.qty}×</b> ${esc(i.name)}</li>`).join('');
   const i = FLOW.indexOf(o.status);
   return `<div class="card" data-id="${o.id}">
     <div class="top"><span class="num">#${o.num}</span><span class="time">${fmt(o.created)}</span></div>
@@ -42,15 +82,18 @@ function openDlg(o) {
   editingId = o ? o.id : null;
   $('#dlgTitle').textContent = o ? `Edit order #${o.num}` : 'New order';
   $('#fName').value = o ? o.name : '';
-  $('#fItems').value = o ? o.items.join('\n') : '';
+  $('#lines').innerHTML = '';
+  (o ? o.items : [{ name: '', qty: 1 }]).forEach(addLine);
+  $('#noProd').hidden = state.products.length > 0 || !!(o && o.items.length);
   $('#fNotes').value = o ? o.notes : '';
   $('#delBtn').style.display = o ? '' : 'none';
   dlg.showModal();
-  $('#fItems').focus();
 }
 form.addEventListener('submit', e => {
-  const items = $('#fItems').value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (!items.length) { e.preventDefault(); return; }
+  const items = [...document.querySelectorAll('#lines .line')].map(l => ({
+    name: $('select', l).value, qty: Math.max(1, parseInt($('input', l).value, 10) || 1)
+  })).filter(i => i.name);
+  if (!items.length) { e.preventDefault(); alert('Add at least one product with a quantity.'); return; }
   const data = { name: $('#fName').value.trim(), items, notes: $('#fNotes').value.trim() };
   if (editingId) Object.assign(state.orders.find(o => o.id === editingId), data);
   else state.orders.push({ id: Date.now() + Math.random(), num: state.next++, status: 'new', created: Date.now(), ...data });
@@ -84,7 +127,7 @@ $('#exportBtn').onclick = () => {
   for (const o of state.orders) {
     const d = new Date(o.created), p = n => String(n).padStart(2, '0');
     const when = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-    rows.push([o.num, label[o.status], when, o.name, o.items.join('; '), o.notes]);
+    rows.push([o.num, label[o.status], when, o.name, o.items.map(i => `${i.qty}x ${i.name}`).join('; '), o.notes]);
   }
   const csv = '\uFEFF' + rows.map(r => r.map(q).join(',')).join('\r\n');
   const a = document.createElement('a');
