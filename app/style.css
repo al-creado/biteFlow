@@ -28,7 +28,6 @@ main{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:16
 .card .time{color:var(--muted);font-size:13px}
 .card .name{color:var(--muted);margin-bottom:6px;font-weight:600}
 .card ul{margin:6px 0;padding-left:20px}
-.card li b{color:var(--action)}
 .card .notes{color:#B2336F;font-style:italic;margin:4px 0}
 .card .row{display:flex;gap:8px;margin-top:10px}
 .card .row .go{flex:1}
@@ -56,9 +55,9 @@ input,textarea{display:block;width:100%;margin-top:4px}
 .ic{width:1.1em;height:1.1em;flex:none;vertical-align:-.18em}
 @media(max-width:800px){main{grid-template-columns:1fr}.col{min-height:240px}.banner-in{padding:12px 26px}.script{font-size:38px;padding-left:12px}.tag{padding-left:14px}}
 
-.card li{display:flex;justify-content:space-between;gap:8px}
-.card ul{list-style:none;padding-left:2px}
-.card li .lp{color:var(--muted);font-weight:600;font-size:14px}
+.card li{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;background:var(--bg);border-left:5px solid var(--ac);border-radius:10px;padding:6px 10px 6px 8px;margin-bottom:6px}
+.card ul{list-style:none;padding:0;margin:8px 0}
+.card li .lp{color:var(--text);font-weight:700;font-size:14px;white-space:nowrap}
 .ctotal{display:flex;justify-content:space-between;border-top:1px dashed var(--line);padding-top:6px;margin-top:4px;font-weight:600}
 .ctotal b{color:var(--action)}
 .total{display:flex;justify-content:space-between;align-items:center;margin:2px 0 14px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:14px;font-weight:600}
@@ -109,3 +108,9 @@ input,textarea{display:block;width:100%;margin-top:4px}
 button{white-space:nowrap}
 @media(max-width:800px){.script{font-size:28px}#newBtn{padding:8px 12px}.banner-in{padding-right:12px}}
 @media(max-width:800px){.script{font-size:clamp(22px,6.4vw,28px)}.banner{padding:8px}.banner-in{padding-left:20px;gap:6px}.brand{min-width:0}.hbtns{gap:5px}#prodBtn,#exportBtn{width:36px;height:36px}}
+
+.card li .q{background:var(--ac);color:#fff;font-weight:700;font-size:20px;line-height:1;min-width:46px;text-align:center;padding:6px 8px;border-radius:9px}
+.card li .nm{font-weight:600;line-height:1.25}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;flex:none}
+.dd-name{display:flex;align-items:center;min-width:0}
+.line{border-left:6px solid var(--ac,var(--line))}

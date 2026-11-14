@@ -7,6 +7,19 @@ const SEED = [
   { name: 'Prawn (Kardi) Potato Chops (3 nos)', price: 120 }
 ];
 const KEY = 'biteflow.v1';
+const PALETTE = [
+  ['#FFD6E8', '#C73B85'], ['#CFF1DD', '#26784A'], ['#D3E8FF', '#2B6CB0'], ['#FFF0B8', '#7A6100'],
+  ['#E5DBFF', '#6B46C1'], ['#FFDCC7', '#A9440F'], ['#C9F0F0', '#0F766E'], ['#E3F3C2', '#4F6F0D']
+];
+function assignColors(products) {
+  const used = new Set(products.filter(p => Number.isInteger(p.c)).map(p => p.c));
+  products.forEach(p => {
+    if (Number.isInteger(p.c)) return;
+    let c = PALETTE.findIndex((_, i) => !used.has(i));
+    if (c < 0) c = products.indexOf(p) % PALETTE.length;
+    p.c = c; used.add(c);
+  });
+}
 const seedPrice = n => (SEED.find(p => p.name.toLowerCase() === String(n).toLowerCase()) || {}).price || 0;
 let state = load();
 function load() {
@@ -14,7 +27,8 @@ function load() {
     const s = JSON.parse(localStorage.getItem(KEY));
     if (s && Array.isArray(s.orders)) {
       s.products = (Array.isArray(s.products) ? s.products : []).map(p =>
-        typeof p === 'string' ? { name: p, price: seedPrice(p) } : { name: p.name, price: Number(p.price) || 0 });
+        typeof p === 'string' ? { name: p, price: seedPrice(p) } : { name: p.name, price: Number(p.price) || 0, c: p.c });
+      assignColors(s.products);
       const priceOf = n => (s.products.find(p => p.name === n) || {}).price || 0;
       s.orders.forEach(o => {
         if (o.status === 'completed') o.status = 'delivered';
@@ -30,13 +44,22 @@ function load() {
       return s;
     }
   } catch (e) {}
-  return { next: 1, orders: [], products: SEED.map(p => ({ ...p })) };
+  const fresh = { next: 1, orders: [], products: SEED.map(p => ({ ...p })) };
+  assignColors(fresh.products);
+  return fresh;
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const $ = (s, r = document) => r.querySelector(s);
 const FLOW = ['new', 'ready', 'delivered'];
 const NEXT_LABEL = { new: 'Mark ready', ready: 'Delivered' };
 const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const colorOf = n => {
+  const p = state.products.find(x => x.name === n);
+  if (p && Number.isInteger(p.c)) return PALETTE[p.c % PALETTE.length];
+  let h = 0; for (const ch of String(n)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return PALETTE[h % PALETTE.length];
+};
+const colorStyle = n => { const [bg, ac] = colorOf(n); return `--bg:${bg};--ac:${ac}`; };
 const productPrice = n => (state.products.find(p => p.name === n) || {}).price || 0;
 const orderTotal = o => o.items.reduce((t, i) => t + i.qty * (i.price || 0), 0);
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -62,7 +85,7 @@ function makeDropdown(options, value, onChange) {
   function paint() {
     label.textContent = current || 'Select product';
     label.classList.toggle('ph', !current);
-    list.innerHTML = options.length ? options.map((o, i) => `<li role="option" data-i="${i}" aria-selected="${o.name === current}" class="${o.name === current ? 'sel' : ''}"><span class="dd-name">${esc(o.name)}</span><span class="dd-price">${o.price ? money(o.price) : ''}</span></li>`).join('') : '<li class="dd-empty">No products yet</li>';
+    list.innerHTML = options.length ? options.map((o, i) => `<li role="option" data-i="${i}" aria-selected="${o.name === current}" class="${o.name === current ? 'sel' : ''}"><span class="dd-name"><i class="dot" style="background:${colorOf(o.name)[1]}"></i>${esc(o.name)}</span><span class="dd-price">${o.price ? money(o.price) : ''}</span></li>`).join('') : '<li class="dd-empty">No products yet</li>';
   }
   function setActive(i) {
     active = Math.max(0, Math.min(options.length - 1, i));
@@ -120,9 +143,11 @@ function addLine(item) {
   const row = document.createElement('div');
   row.className = 'line';
   row.dataset.name = item.name || '';
+  if (item.name) row.style.cssText = colorStyle(item.name);
   row.dataset.price = item.name ? (typeof item.price === 'number' ? item.price : productPrice(item.name)) : 0;
   const dd = makeDropdown(options, item.name, v => {
     const o = options.find(x => x.name === v);
+    row.style.cssText = colorStyle(v);
     row.dataset.name = v; row.dataset.price = state.products.some(p => p.name === v) ? productPrice(v) : (o ? o.price : 0);
     updateTotal();
   });
@@ -155,6 +180,7 @@ $('#seedBtn').onclick = () => {
     const ex = state.products.find(p => p.name.toLowerCase() === s.name.toLowerCase());
     if (!ex) state.products.push({ ...s }); else if (!ex.price) ex.price = s.price;
   });
+  assignColors(state.products);
   save(); renderProducts();
 };
 $('#pClose').onclick = () => pdlg.close();
@@ -163,7 +189,7 @@ $('#pform').onsubmit = e => {
   const n = $('#pName').value.trim(), price = Math.max(0, Number($('#pPrice').value) || 0);
   if (n) {
     const ex = state.products.find(p => p.name.toLowerCase() === n.toLowerCase());
-    if (ex) ex.price = price; else state.products.push({ name: n, price });
+    if (ex) ex.price = price; else { state.products.push({ name: n, price }); assignColors(state.products); }
     save(); renderProducts();
   }
   $('#pName').value = ''; $('#pPrice').value = ''; $('#pName').focus();
@@ -190,7 +216,7 @@ function render() {
   }
 }
 function card(o) {
-  const items = o.items.map(i => `<li><span><b>${i.qty}×</b> ${esc(i.name)}</span>${i.price ? `<span class="lp">${money(i.qty * i.price)}</span>` : ''}</li>`).join('');
+  const items = o.items.map(i => `<li style="${colorStyle(i.name)}"><span class="q">${i.qty}×</span><span class="nm">${esc(i.name)}</span>${i.price ? `<span class="lp">${money(i.qty * i.price)}</span>` : '<span></span>'}</li>`).join('');
   const total = orderTotal(o);
   const i = FLOW.indexOf(o.status);
   return `<div class="card" data-id="${o.id}">
