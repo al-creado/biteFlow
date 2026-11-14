@@ -53,6 +53,7 @@ function createFakeServer() {
           if (b) { frozen = null; if (!hold) flush(); }
           server.notify();
         },
+        failSnapshots(err) { subs.forEach(s => s.error && s.error(err)); },
         holdAcks(b) { hold = b; if (!b && isOnline) { flush(); server.notify(); } },
         _emit() {
           const v = view();
@@ -68,8 +69,8 @@ function createFakeServer() {
         fb: {
           collection: (db, path) => ({ type: 'col', path }),
           doc: (db, path, id) => ({ type: 'doc', path: id ? path + '/' + id : path }),
-          onSnapshot(ref, next) {
-            const s = { ref, next }; subs.add(s);
+          onSnapshot(ref, next, error) {
+            const s = { ref, next, error }; subs.add(s);
             queueMicrotask(() => subs.has(s) && client._emit());
             return () => subs.delete(s);
           },

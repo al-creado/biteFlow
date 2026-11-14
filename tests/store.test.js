@@ -206,3 +206,11 @@ test('cloud products get distinct colours and case-insensitive upsert', async ()
   assert.equal(ps.find(p => p.name === 'Croquette').price, 150);
   assert.equal(new Set(ps.map(p => p.c)).size, 2);
 });
+
+test('cloud store reports snapshot errors through onError', async () => {
+  const server = createFakeServer(); const client = server.createClient(); const errs = [];
+  Store.createCloudStore({ fb: client.fb, db: client.db, onError: e => errs.push(e.code) });
+  await tick();
+  client.failSnapshots({ code: 'permission-denied' });
+  assert.deepEqual(errs, ['permission-denied', 'permission-denied']);
+});

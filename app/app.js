@@ -14,9 +14,11 @@ let state = { orders: [], products: [], status: 'synced' };
 let store = null, unsubscribe = null;
 function setStore(next) {
   if (unsubscribe) unsubscribe();
-  store = next;
+  store = next; unsubscribe = null;
+  if (!next) { state = { orders: [], products: [], status: 'synced' }; render(); return; }
   unsubscribe = next.subscribe(snap => {
     state = snap;
+    Auth.setSyncStatus(snap.status, next.kind);
     render();
     const pl = document.getElementById('plist');
     if (pdlg.open && !(pl && pl.contains(document.activeElement))) renderProducts();
@@ -255,4 +257,4 @@ $('#exportBtn').onclick = () => {
 const memoryStorage = (() => { const m = {}; return { getItem: k => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); } }; })();
 let storage = memoryStorage;
 try { storage = window.localStorage; storage.getItem('biteflow.v1'); } catch (e) { storage = memoryStorage; }
-setStore(Store.createLocalStore({ storage, seed: SEED }));
+Auth.start({ localFactory: () => Store.createLocalStore({ storage, seed: SEED }), onStore: next => setStore(next) });

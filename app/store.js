@@ -110,7 +110,7 @@
   const TX_TIMEOUT_MS = 4000;
   const BATCH_LIMIT = 500;
 
-  function createCloudStore({ fb, db }) {
+  function createCloudStore({ fb, db, onError }) {
     const orders = new Map(), products = new Map();
     const flags = { orders: null, products: null };   // metadata of the latest snapshot of each collection
     const listeners = new Set();
@@ -148,8 +148,8 @@
       map.clear();
       snap.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
     }
-    unsubs.push(fb.onSnapshot(ordersCol(), snap => { load(orders, snap); flags.orders = snap.metadata; emit(); }, () => {}));
-    unsubs.push(fb.onSnapshot(fb.collection(db, 'products'), snap => { load(products, snap); flags.products = snap.metadata; emit(); }, () => {}));
+    unsubs.push(fb.onSnapshot(ordersCol(), snap => { load(orders, snap); flags.orders = snap.metadata; emit(); }, err => onError && onError(err)));
+    unsubs.push(fb.onSnapshot(fb.collection(db, 'products'), snap => { load(products, snap); flags.products = snap.metadata; emit(); }, err => onError && onError(err)));
 
     // After offline numbering the shared counter may lag behind the highest number in use.
     async function reconcileCounter() {

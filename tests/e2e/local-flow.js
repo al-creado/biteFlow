@@ -1,17 +1,20 @@
 // Browser regression test for local-only mode. Run: NODE_PATH=$(npm root -g) node tests/e2e/local-flow.js
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
-const path = require('node:path');
 const fs = require('node:fs');
+const { serve } = require('../helpers/serve.js');
 
 (async () => {
+  // no Firebase config => the app runs in local-only mode
+  const srv = await serve({ 'firebase-config.js': 'window.FIREBASE_CONFIG = null;' });
   const b = await chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 1200, height: 800 }, acceptDownloads: true });
   const p = await ctx.newPage();
   const errs = [];
   p.on('pageerror', e => errs.push(e.message));
   p.on('console', m => m.type() === 'error' && errs.push(m.text()));
-  await p.goto('file://' + path.resolve(__dirname, '../../app/index.html'));
+  await p.goto(srv.url);
+  assert.equal(await p.textContent('#syncPill .pill-t'), 'Local only');
 
   const count = s => p.locator(`.col[data-status=${s}] .card`).count();
   // seeded menu on a fresh device
@@ -28,7 +31,7 @@ const fs = require('node:fs');
   await p.click('#addLine'); await p.click('#lines .line:nth-child(2) .dd-btn');
   await p.click('.dd-list:not([hidden]) li:has-text("Brownie")');
   assert.equal((await p.textContent('#dtotal')).replace(/\s/g, ''), '₹390');
-  await p.click('button[type=submit]');
+  await p.click('#dlg button[type=submit]');
   assert.equal(await count('new'), 1);
   const txt = await p.locator('.col[data-status=new] .card').innerText();
   assert.match(txt, /Priya/); assert.match(txt, /₹390/);
@@ -43,7 +46,7 @@ const fs = require('node:fs');
   await p.click('.col[data-status=delivered] [data-act=edit]');
   await p.click('#lines .line:nth-child(1) .step[data-d="1"]');
   assert.equal((await p.textContent('#dtotal')).replace(/\s/g, ''), '₹500');
-  await p.click('button[type=submit]');
+  await p.click('#dlg button[type=submit]');
   assert.match(await p.locator('.col[data-status=delivered] .card').innerText(), /₹500/);
 
   // persistence
@@ -56,6 +59,6 @@ const fs = require('node:fs');
   assert.match(csv, /"Total"/); assert.match(csv, /,500,/);
 
   assert.deepEqual(errs, []);
-  await b.close();
+  await b.close(); srv.close();
   console.log('local-flow OK');
 })().catch(e => { console.error(e); process.exit(1); });
