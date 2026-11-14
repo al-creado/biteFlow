@@ -1,13 +1,13 @@
 const KEY = 'biteflow.v1';
 let state = load();
 function load() {
-  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && Array.isArray(s.orders)) return s; } catch (e) {}
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && Array.isArray(s.orders)) { s.orders.forEach(o => { if (o.status === 'completed') o.status = 'delivered'; }); return s; } } catch (e) {}
   return { next: 1, orders: [] };
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const $ = (s, r = document) => r.querySelector(s);
-const FLOW = ['new', 'ready', 'completed'];
-const NEXT_LABEL = { new: 'Mark ready ✓', ready: 'Complete ✓' };
+const FLOW = ['new', 'ready', 'delivered'];
+const NEXT_LABEL = { new: 'Mark ready ✓', ready: 'Delivered ✓' };
 const dlg = $('#dlg'), form = $('#form');
 let editingId = null;
 
@@ -18,7 +18,7 @@ function render() {
   for (const status of FLOW) {
     const col = $(`.col[data-status=${status}]`);
     const orders = state.orders.filter(o => o.status === status);
-    if (status === 'completed') orders.reverse();
+    if (status === 'delivered') orders.reverse();
     $('.count', col).textContent = orders.length || '';
     $('.list', col).innerHTML = orders.length ? orders.map(card).join('') : '<div class="empty">No orders</div>';
   }
@@ -64,8 +64,8 @@ $('#delBtn').onclick = () => {
 };
 $('#newBtn').onclick = () => openDlg(null);
 $('#clearBtn').onclick = () => {
-  if (!confirm('Remove all completed orders?')) return;
-  state.orders = state.orders.filter(o => o.status !== 'completed');
+  if (!confirm('Remove all delivered orders?')) return;
+  state.orders = state.orders.filter(o => o.status !== 'delivered');
   save(); render();
 };
 document.addEventListener('click', e => {
