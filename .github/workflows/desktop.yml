@@ -1,6 +1,11 @@
 name: Build desktop apps
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version to tag, e.g. v1.0.0 (leave empty to only build)'
+        required: false
+        default: ''
   push:
     tags: ['v*']
 permissions:
@@ -22,13 +27,22 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - uses: actions/upload-artifact@v4
         with:
-          name: biteflow-${{ matrix.os }}
+          name: amylicious-${{ matrix.os }}
           path: |
             dist/*.exe
             dist/*.dmg
-      - if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          files: |
-            dist/*.exe
-            dist/*.dmg
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: Amylicious ${{ inputs.version || github.ref_name }}
+          files: dist/*
