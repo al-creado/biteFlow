@@ -8,7 +8,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 <section id="login" class="login" hidden data-state="form">
@@ -63,6 +63,12 @@
     </div>
   </form>
 </dialog>
+<dialog id="idlg">
+  <h3>Upload this device's data?</h3>
+  <p id="iText" class="a-status"></p>
+  <p id="iErr" class="login-err" role="alert"></p>
+  <div class="actions"><button type="button" id="iNever">Don't ask again</button><span class="spacer"></span><button type="button" id="iLater">Not now</button><button type="button" id="iUpload" class="primary">Upload</button></div>
+</dialog>
 <dialog id="adlg">
   <h3>Account</h3>
   <p id="aEmail" class="a-email"></p>
@@ -75,10 +81,10 @@
   <ul id="plist"></ul>
   <div class="actions"><button type="button" id="seedBtn">Add Amylicious menu</button><span class="spacer"></span><button type="button" id="pClose">Done</button></div>
 </dialog>
-<script src="firebase-config.js?v=15"></script>
-<script src="vendor/firebase.js?v=15"></script>
-<script src="store.js?v=15"></script>
-<script src="auth.js?v=15"></script>
-<script src="app.js?v=15"></script>
+<script src="firebase-config.js?v=16"></script>
+<script src="vendor/firebase.js?v=16"></script>
+<script src="store.js?v=16"></script>
+<script src="auth.js?v=16"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

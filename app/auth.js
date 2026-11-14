@@ -45,6 +45,42 @@
     const err = $('#loginErr'); err.textContent = pendingMessage; pendingMessage = '';
     if (state !== 'loading') { const f = $('#loginEmail'); if (f && !f.value) f.focus(); }
   }
+  // ---- offer to upload the orders/products saved on this device (local-only mode) ----
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  function readLegacy() {
+    try {
+      const raw = window.localStorage.getItem(Store.KEY); if (!raw) return null;
+      const l = Store.normalizeLegacy(JSON.parse(raw));
+      return l.orders.length || l.products.length ? l : null;
+    } catch (e) { return null; }
+  }
+  function offerImport(store, user) {
+    const key = 'biteflow.import.' + (user.uid || user.email);
+    try { if (window.localStorage.getItem(key)) return; } catch (e) { return; }
+    const legacy = readLegacy(); if (!legacy) return;
+    const dlg = $('#idlg'), err = $('#iErr'), up = $('#iUpload');
+    const mark = v => { try { window.localStorage.setItem(key, v); } catch (e) {} };
+    $('#iText').textContent = plural(legacy.orders.length, 'order') + ' and ' + plural(legacy.products.length, 'product') +
+      ' are saved on this device. Upload them to your shop account so every device shows them? Nothing is deleted from this device.';
+    err.textContent = ''; up.disabled = false;
+    up.onclick = () => {
+      up.disabled = true; err.textContent = '';
+      store.importLegacy(legacy).then(() => { mark('done'); dlg.close(); })
+        .catch(() => { err.textContent = 'Could not upload. Check your connection and try again.'; up.disabled = false; });
+    };
+    $('#iLater').onclick = () => dlg.close();
+    $('#iNever').onclick = () => { mark('never'); dlg.close(); };
+    if (!dlg.open) dlg.showModal();
+  }
+  function offerWhenSynced(store, user) {
+    let offered = false;
+    const un = store.subscribe(snap => {
+      if (offered || snap.status !== 'synced') return;
+      offered = true; Promise.resolve().then(() => un());
+      offerImport(store, user);
+    });
+  }
+
   function hideLogin() { const el = $('#login'); if (el) el.hidden = true; }
 
   function start({ localFactory, onStore }) {
@@ -91,7 +127,7 @@
           if (err && err.code === 'permission-denied') { pendingMessage = errorMessage('permission-denied'); FB.signOut(auth); }
         }
       });
-      hideLogin(); onStore(store, user); paintPill();
+      hideLogin(); onStore(store, user); paintPill();  offerWhenSynced(store, user);
     });
   }
 

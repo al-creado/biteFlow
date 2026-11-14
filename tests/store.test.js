@@ -214,3 +214,52 @@ test('cloud store reports snapshot errors through onError', async () => {
   client.failSnapshots({ code: 'permission-denied' });
   assert.deepEqual(errs, ['permission-denied', 'permission-denied']);
 });
+
+// ---------- importing a device's old local data ----------
+const legacyData = () => Store.normalizeLegacy({
+  next: 6,
+  products: [{ name: 'Croquette', price: 100 }, { name: 'sandwich', price: 75 }],
+  orders: [
+    { id: 11, num: 4, status: 'ready', created: 2000, name: 'B', notes: '', items: [{ name: 'Croquette', qty: 2, price: 100 }] },
+    { id: 10, num: 3, status: 'new', created: 1000, name: 'A', notes: 'x', items: [{ name: 'sandwich', qty: 1, price: 75 }] }
+  ]
+});
+
+test('import into an empty cloud keeps legacy order numbers and sets the counter above them', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  const r = await A.store.importLegacy(legacyData()); await tick();
+  assert.deepEqual(r, { orders: 2, products: 2 });
+  assert.deepEqual(A.snap().orders.map(o => o.num), [3, 4]);
+  assert.ok(server.get('meta/counter').next >= 5);
+  const next = await A.store.addOrder({ name: 'new', items: [item()], notes: '' });
+  assert.equal(next.num, 5);
+});
+
+test('import into a cloud that already has orders renumbers the imported ones from the counter in created order', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  await A.store.addOrder({ name: 'existing', items: [item()], notes: '' });
+  await A.store.addOrder({ name: 'existing2', items: [item()], notes: '' }); await tick();
+  await A.store.importLegacy(legacyData()); await tick();
+  const byName = Object.fromEntries(A.snap().orders.map(o => [o.name, o.num]));
+  assert.deepEqual([byName.existing, byName.existing2, byName.A, byName.B], [1, 2, 3, 4]);
+  assert.ok(server.get('meta/counter').next >= 5);
+});
+
+test('import merges products by name case-insensitively without duplicates', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  await A.store.upsertProduct({ name: 'SANDWICH', price: 0 }); await tick();
+  const r = await A.store.importLegacy(legacyData()); await tick();
+  assert.equal(A.snap().products.length, 2);
+  assert.equal(r.products, 1);
+  assert.equal(A.snap().products.find(p => p.name === 'SANDWICH').price, 75);   // empty price filled from the device
+});
+
+test('importing the same legacy data twice, or from two devices, does not duplicate orders', async () => {
+  const server = createFakeServer(); const A = cloud(server), B = cloud(server); await tick();
+  await A.store.importLegacy(legacyData()); await tick();
+  const again = await A.store.importLegacy(legacyData()); await tick();
+  await B.store.importLegacy(legacyData()); await tick();
+  assert.deepEqual(again, { orders: 0, products: 0 });
+  assert.equal(server.count('orders'), 2);
+  assert.equal(server.count('products'), 2);
+});

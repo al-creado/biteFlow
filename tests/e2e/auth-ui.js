@@ -75,6 +75,33 @@ const STUB = `(function(){ const module={exports:{}}; ${fake}
   await p.waitForFunction(() => /No internet/.test(document.querySelector('#loginErr').textContent));
   t.srv.close();
 
+  // 6. a device with old local data is offered an upload once, numbers kept, nothing duplicated
+  const LEGACY = JSON.stringify({ next: 6, products: [{ name: 'Croquette', price: 100 }],
+    orders: [{ id: 1, num: 4, status: 'ready', created: 2000, name: 'B', notes: '', items: [{ name: 'Croquette', qty: 2, price: 100 }] },
+             { id: 2, num: 3, status: 'new', created: 1000, name: 'A', notes: '', items: [{ name: 'Croquette', qty: 1, price: 100 }] }] });
+  t = await open({ 'firebase-config.js': "window.FIREBASE_CONFIG = {apiKey:'k', projectId:'p'};", 'vendor/firebase.js': STUB },
+    {});
+  const q = t.p;
+  await q.evaluate(l => localStorage.setItem('biteflow.v1', l), LEGACY);
+  await q.reload();
+  await q.waitForSelector('#loginForm', { state: 'visible' });
+  await q.fill('#loginEmail', 'shop@example.com'); await q.fill('#loginPass', 'good'); await q.click('#loginSubmit');
+  await q.waitForSelector('#idlg[open]');
+  assert.match(await q.textContent('#iText'), /2 orders and 1 product /);
+  await q.click('#iUpload');
+  await q.waitForSelector('#idlg', { state: 'hidden' });
+  assert.equal(await q.evaluate(() => window.__server.count('orders')), 2);
+  assert.deepEqual(await q.evaluate(() => [...window.__server.data].filter(([k]) => k.startsWith('orders/')).map(([, v]) => v.num).sort()), [3, 4]);
+  assert.equal(await q.evaluate(() => localStorage.getItem('biteflow.import.shop@example.com')), 'done');
+  assert.equal(await q.evaluate(() => !!localStorage.getItem('biteflow.v1')), true);   // local copy kept as a backup
+  await q.click('#syncPill'); await q.click('#signOutBtn');
+  await q.waitForSelector('#loginForm', { state: 'visible' });
+  await q.fill('#loginPass', 'good'); await q.click('#loginSubmit');
+  await q.waitForSelector('.col[data-status=new] .card');
+  await q.waitForTimeout(400);
+  assert.equal(await q.locator('#idlg[open]').count(), 0);   // not offered again
+  t.srv.close();
+
   assert.deepEqual(errs, []);
   await b.close();
   console.log('auth-ui OK');

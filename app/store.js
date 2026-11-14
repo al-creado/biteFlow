@@ -50,6 +50,7 @@
     return { next: Number(r.next) || maxNum + 1, orders, products };
   }
 
+  const hashString = str => { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0; return h.toString(36); };
   const cleanItems = items => items.map(i => ({ name: i.name, qty: Math.max(1, Number(i.qty) || 1), price: Number(i.price) || 0 }));
 
   function createLocalStore({ storage, seed }) {
@@ -245,7 +246,37 @@
           quiet(fb.setDoc(productRef(prod.id), { name: prod.name, price: prod.price, c: prod.c }));
         }
       },
-      async importLegacy() { return { orders: 0, products: 0 }; }
+      async importLegacy(legacy) {
+        // products: merge by name (case-insensitive), fill an empty price, add the rest
+        const known = [...products.values()].map(p => ({ ...p }));
+        let createdProducts = 0;
+        for (const lp of legacy.products || []) {
+          const ex = known.find(p => lc(p.name) === lc(lp.name));
+          if (ex) { if (!ex.price && lp.price) { ex.price = lp.price; quiet(fb.updateDoc(productRef(ex.id), { price: lp.price })); } continue; }
+          const prod = { id: uid(), name: lp.name, price: lp.price || 0 };
+          known.push(prod); assignColors(known); createdProducts++;
+          quiet(fb.setDoc(productRef(prod.id), { name: prod.name, price: prod.price, c: prod.c }));
+        }
+        // orders: stable ids make a repeat import (or the same data from another device) a no-op
+        const importId = o => 'legacy-' + hashString(o.id + '|' + o.created);
+        const fresh = (legacy.orders || []).filter(o => !orders.has(importId(o)))
+          .sort((a, b) => a.created - b.created || a.num - b.num);
+        const keepNumbers = orders.size === 0;     // first device in: keep its numbers; otherwise number from the shared counter
+        for (let i = 0; i < fresh.length; i += 400) {
+          await fb.runTransaction(db, async tx => {
+            const snap = await tx.get(counterRef());
+            const counter = snap.exists() ? snap.data().next : 1;
+            let n = keepNumbers ? counter : Math.max(counter, highest() + 1), top = 0;
+            fresh.slice(i, i + 400).forEach(o => {
+              const num = keepNumbers ? o.num : n++;
+              top = Math.max(top, num);
+              tx.set(orderRef(importId(o)), { num, status: o.status, created: o.created, name: o.name, notes: o.notes, items: cleanItems(o.items), importedFrom: String(o.id) });
+            });
+            tx.set(counterRef(), { next: keepNumbers ? Math.max(counter, top + 1) : n });
+          });
+        }
+        return { orders: fresh.length, products: createdProducts };
+      }
     };
   }
 
