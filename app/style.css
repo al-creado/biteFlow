@@ -139,3 +139,7 @@ button.wide{width:100%;padding:11px 14px;font-size:15px}
 .a-email{font-weight:700;margin:0 0 6px;word-break:break-all}
 .a-status{color:var(--muted);margin:0 0 16px;font-size:14px}
 @media(max-width:800px){.pill .pill-t{display:none}.pill{width:36px;height:36px;padding:0}}
+
+.login-info{margin:-4px 0 10px;color:var(--ready);font-size:13px;font-weight:600}
+.login-info:empty{display:none}
+.forgot{display:block;margin:10px auto 0!important;font-size:13px!important;text-decoration:underline}

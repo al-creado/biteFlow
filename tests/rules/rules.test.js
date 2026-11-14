@@ -22,7 +22,7 @@ const waitForEmulator = async () => {
 
 test.before(async () => {
   await waitForEmulator();
-  const rules = fs.readFileSync(path.resolve(__dirname, '../../firestore.rules'), 'utf8').replace('OWNER_EMAIL', OWNER);
+  const rules = fs.readFileSync(path.resolve(__dirname, '../../firestore.rules'), 'utf8').replaceAll('OWNER_EMAIL', OWNER);
   env = await initializeTestEnvironment({ projectId: 'amylicious-rules', firestore: { rules, host: HOST, port: PORT } });
 });
 test.after(async () => { if (env) await env.cleanup(); });

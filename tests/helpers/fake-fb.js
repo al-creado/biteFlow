@@ -21,7 +21,7 @@ function createFakeServer() {
     notify() { clients.forEach(c => c._emit()); },
     count(col) { return [...data.keys()].filter(k => k.startsWith(col + '/')).length; },
     createClient({ online = true } = {}) {
-      let isOnline = online, hold = false, frozen = null;
+      let isOnline = online, hold = false, frozen = null, hangTx = false;
       const pending = [];
       const subs = new Set();
       const base = () => (isOnline ? data : frozen || data);
@@ -53,24 +53,33 @@ function createFakeServer() {
           if (b) { frozen = null; if (!hold) flush(); }
           server.notify();
         },
-        failSnapshots(err) { subs.forEach(s => s.error && s.error(err)); },
+        failSnapshots(err) { [...subs].forEach(s => { subs.delete(s); s.error && s.error(err); }); },
         holdAcks(b) { hold = b; if (!b && isOnline) { flush(); server.notify(); } },
         _emit() {
           const v = view();
-          subs.forEach(s => {
-            if (s.ref.type === 'col') {
-              const prefix = s.ref.path + '/';
-              const docs = [...v].filter(([k]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/'))
-                .map(([k, val]) => ({ id: k.slice(prefix.length), data: () => clone(val) }));
-              s.next({ docs, metadata: { fromCache: !isOnline, hasPendingWrites: pending.length > 0 } });
+          [...subs].forEach(s => {
+            if (s.ref.type !== 'col') return;
+            const prefix = s.ref.path + '/';
+            const entries = [...v].filter(([k]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/'));
+            const docs = entries.map(([k, val]) => ({ id: k.slice(prefix.length), data: () => clone(val) }));
+            const metadata = { fromCache: !isOnline, hasPendingWrites: pending.length > 0 };
+            const sig = JSON.stringify(entries), msig = JSON.stringify(metadata);
+            // like the real SDK: a change that only touches fromCache/hasPendingWrites is not delivered
+            // unless the listener asked for includeMetadataChanges
+            const first = s.sig === undefined;
+            if (first || sig !== s.sig || (s.options.includeMetadataChanges && msig !== s.msig)) {
+              s.sig = sig; s.msig = msig;
+              s.next({ docs, metadata });
             }
           });
         },
+        hangTransactions(b) { hangTx = b; },
         fb: {
           collection: (db, path) => ({ type: 'col', path }),
           doc: (db, path, id) => ({ type: 'doc', path: id ? path + '/' + id : path }),
-          onSnapshot(ref, next, error) {
-            const s = { ref, next, error }; subs.add(s);
+          onSnapshot(ref, options, next, error) {
+            if (typeof options === 'function') { error = next; next = options; options = {}; }
+            const s = { ref, options: options || {}, next, error }; subs.add(s);
             queueMicrotask(() => subs.has(s) && client._emit());
             return () => subs.delete(s);
           },
@@ -87,6 +96,7 @@ function createFakeServer() {
             };
           },
           runTransaction(db, fn) {
+            if (hangTx) return new Promise(() => {});
             if (!isOnline) return Promise.reject(new Error('client is offline'));
             const run = server.lock.then(async () => {
               const writes = [];

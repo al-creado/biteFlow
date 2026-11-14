@@ -17,7 +17,9 @@ const STUB = `(function(){ const module={exports:{}}; ${fake}
     GoogleAuthProvider: function () {}, signInWithPopup: async () => { user = { email: 'g@example.com' }; cb(user); },
     signOut: async () => { user = null; cb(null); },
     initializeFirestore: () => client.db, getFirestore: () => client.db,
-    persistentLocalCache: () => ({}), persistentMultipleTabManager: () => ({})
+    persistentLocalCache: () => ({}), persistentMultipleTabManager: () => ({}),
+    sendPasswordResetEmail: async (a, e) => { window.__reset = e; },
+    onSnapshot: (ref, ...a) => { let un = () => {}; setTimeout(() => { un = client.fb.onSnapshot(ref, ...a); }, window.__delay || 0); return () => un(); }
   });
 })();`;
 
@@ -100,6 +102,27 @@ const STUB = `(function(){ const module={exports:{}}; ${fake}
   await q.waitForSelector('.col[data-status=new] .card');
   await q.waitForTimeout(400);
   assert.equal(await q.locator('#idlg[open]').count(), 0);   // not offered again
+  t.srv.close();
+
+  // 7. loading state until first data, forgot-password, and a sync error shows 'Sync problem'
+  t = await open({ 'firebase-config.js': "window.FIREBASE_CONFIG = {apiKey:'k', projectId:'p'};", 'vendor/firebase.js': STUB });
+  const r = t.p;
+  await r.waitForSelector('#loginForm', { state: 'visible' });
+  await r.click('#forgotBtn');
+  assert.equal(await r.textContent('#loginErr'), 'Type your email above first.');
+  await r.fill('#loginEmail', 'shop@example.com'); await r.click('#forgotBtn');
+  await r.waitForFunction(() => /reset link/.test(document.querySelector('#loginInfo').textContent));
+  assert.equal(await r.evaluate(() => window.__reset), 'shop@example.com');
+  await r.evaluate(() => { window.__delay = 700; });
+  await r.fill('#loginPass', 'good'); await r.click('#loginSubmit');
+  await r.waitForSelector('#login[data-state=loading]', { state: 'visible' });
+  assert.equal(await r.textContent('#syncPill .pill-t'), 'Syncing');            // not "Synced" while nothing has loaded
+  assert.equal(await r.locator('.col').first().isVisible(), true);              // board is behind the overlay, never exposed
+  await r.waitForSelector('#login', { state: 'hidden' });
+  await r.waitForFunction(() => document.querySelector('#syncPill .pill-t').textContent === 'Synced');
+  await r.evaluate(() => window.__client.failSnapshots({ code: 'resource-exhausted' }));
+  await r.waitForFunction(() => document.querySelector('#syncPill .pill-t').textContent === 'Sync problem');
+  assert.equal(await r.locator('#login').isVisible(), false);                   // stays signed in, board still usable
   t.srv.close();
 
   assert.deepEqual(errs, []);

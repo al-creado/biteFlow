@@ -10,6 +10,10 @@ Build > Authentication > Sign-in method: switch on **Email/Password** (first tog
 - Authentication > Users > **Add user**: your email and a password. Use the same address you use for Google;
   Firebase treats both as one person. The Windows and Mac apps sign in with this email and password
   (Google sign-in is blocked inside desktop apps).
+  Note: if you later sign in with Google on the website using the same address, Firebase may remove the
+  password from that account (the password was never verified). If the desktop app then says "Wrong email or
+  password", use **Forgot password?** on its sign-in screen to set it again, or verify the address first.
+  I could not test this behaviour here: please try both sign-ins once after setup.
 - Authentication > Settings > User actions: untick **Enable create (sign-up)** and save.
 - Authentication > Settings > Authorized domains: **Add domain** `al-creado.github.io`.
 
@@ -19,8 +23,8 @@ Build > Firestore Database > **Create database**, location **asia-south1 (Mumbai
 ## 4. Security rules (this is what keeps your customers' names private)
 1. Open Firestore Database > **Rules**.
 2. Paste the contents of `firestore.rules` from this repository.
-3. Replace `OWNER_EMAIL` with your email in quotes. For more than one person use
-   `['you@gmail.com', 'helper@gmail.com']`.
+3. Replace the text `OWNER_EMAIL` with your email, keeping the quote marks around it (so it reads
+   `['you@gmail.com']`). For more than one person use `['you@gmail.com', 'helper@gmail.com']`.
 4. **Publish**. Do not commit your real email into the repository (it is public).
 
 Check the rules in the **Rules Playground** (Rules tab) with the "Firestore" simulator and a `get` on
@@ -45,7 +49,10 @@ asked once whether to upload them; choose **Upload**. Your old copy stays on the
 ## Limits and notes
 - Free (Spark) plan: 50,000 reads and 20,000 writes per day, 1 GiB stored. Plenty for this business.
   Every fresh install re-reads all orders; use **Clear** to remove delivered orders you no longer need.
-- Two devices that are both offline can give the same order number to different orders; the shared
-  counter catches up when they reconnect, but the numbers are not rewritten.
+- An order added while a device is offline shows a provisional number straight away. When the device is
+  back online each such order is given its final number from the shared counter, so numbers never clash;
+  an order's number can therefore change once, right after reconnecting.
+- If the live connection stops (for example the free daily quota is used up), the pill shows **Sync problem**
+  and the app retries a few times; closing and reopening the app also retries.
 - The Firebase code the app uses is bundled in `app/vendor/firebase.js`. To rebuild it:
   `npm run build:vendor`.

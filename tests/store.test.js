@@ -102,16 +102,18 @@ test('cloud addOrder from two stores gets distinct numbers', async () => {
     A.store.addOrder({ name: 'A', items: [item()], notes: '' }),
     B.store.addOrder({ name: 'B', items: [item()], notes: '' })
   ]);
-  assert.deepEqual([a.num, b.num].sort(), [1, 2]);
-  await tick();
+  await tick(10);
   assert.deepEqual(A.snap().orders.map(o => o.num), [1, 2]);
+  assert.ok(A.snap().orders.every(o => !o.provisional));
   assert.equal(server.get('meta/counter').next, 3);
+  assert.ok(a.id !== b.id);
 });
 
 test('cloud setStatus writes only the status field', async () => {
   const server = createFakeServer();
   const A = cloud(server); await tick();
   const o = await A.store.addOrder({ name: 'A', items: [item()], notes: 'n' });
+  await tick(10);                                   // let the background numbering finish first
   await A.store.setStatus(o.id, 'ready'); await tick();
   const op = server.log[server.log.length - 1];
   assert.deepEqual(op, { type: 'update', path: 'orders/' + o.id, data: { status: 'ready' } });
@@ -140,6 +142,7 @@ test('cloud addOrder while offline resolves immediately with number = highest kn
   await tick();
   assert.equal(A.snap().orders.length, 3);
   assert.equal(server.count('orders'), 2);
+  assert.equal(A.snap().orders.find(x => x.name === 'offline').provisional, true);
 });
 
 test('cloud counter catches up after reconnect (next >= highest number + 1)', async () => {
@@ -153,8 +156,8 @@ test('cloud counter catches up after reconnect (next >= highest number + 1)', as
   A.client.setOnline(true); await tick(8);
   assert.equal(server.count('orders'), 3);
   assert.ok(server.get('meta/counter').next >= 4, 'counter was ' + JSON.stringify(server.get('meta/counter')));
-  const nxt = await A.store.addOrder({ name: 'after', items: [item()], notes: '' });
-  assert.equal(nxt.num, 4);
+  const nxt = await A.store.addOrder({ name: 'after', items: [item()], notes: '' }); await tick(10);
+  assert.equal(A.snap().orders.find(x => x.name === 'after').num, 4);
 });
 
 test('cloud clearDelivered with 1200 delivered orders deletes all of them', async () => {
@@ -262,4 +265,56 @@ test('importing the same legacy data twice, or from two devices, does not duplic
   assert.deepEqual(again, { orders: 0, products: 0 });
   assert.equal(server.count('orders'), 2);
   assert.equal(server.count('products'), 2);
+});
+
+test('cloud addOrder returns at once and shows the order even when transactions never finish', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  A.client.hangTransactions(true);
+  const o = await Promise.race([A.store.addOrder({ name: 'x', items: [item()], notes: '' }), new Promise(r => setTimeout(() => r('hung'), 200))]);
+  assert.notEqual(o, 'hung');
+  await tick();
+  assert.equal(A.snap().orders.length, 1);
+});
+
+test('an order numbered offline is renumbered after reconnect when another device took the same number', async () => {
+  const server = createFakeServer(); const A = cloud(server), B = cloud(server); await tick();
+  await A.store.addOrder({ name: 'first', items: [item()], notes: '' }); await tick(8);
+  A.client.setOnline(false); await tick();
+  const off = await A.store.addOrder({ name: 'offline', items: [item()], notes: '' });
+  const on = await B.store.addOrder({ name: 'online', items: [item()], notes: '' }); await tick(8);
+  assert.equal(off.num, on.num);                       // both picked the next number while A could not see B
+  A.client.setOnline(true); await tick(12);
+  const nums = A.snap().orders.map(o => o.num).sort();
+  assert.deepEqual(nums, [1, 2, 3]);
+  assert.ok(A.snap().orders.every(o => !o.provisional));
+  assert.ok(server.get('meta/counter').next >= 4);
+});
+
+test('cloud store status follows connectivity even when no document changes (needs metadata events)', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  await A.store.addOrder({ name: 'x', items: [item()], notes: '' }); await tick(8);
+  assert.equal(A.snap().status, 'synced');
+  A.client.setOnline(false); await tick();
+  assert.equal(A.snap().status, 'offline');
+  A.client.setOnline(true); await tick(8);
+  assert.equal(A.snap().status, 'synced');
+});
+
+test('cloud store restart() listens again after a snapshot error', async () => {
+  const server = createFakeServer(); const client = server.createClient(); const errs = [];
+  const store = Store.createCloudStore({ fb: client.fb, db: client.db, onError: e => errs.push(e.code) });
+  const l = last(); store.subscribe(l.cb); await tick();
+  client.failSnapshots({ code: 'resource-exhausted' });
+  server.data.set('orders/z', { num: 1, status: 'new', created: 1, name: 'late', notes: '', items: [] }); server.notify(); await tick();
+  assert.equal(l.get().orders.length, 0);              // listener is dead, board is stale
+  store.restart(); await tick();
+  assert.equal(l.get().orders.length, 1);
+  assert.deepEqual(errs, ['resource-exhausted', 'resource-exhausted']);
+});
+
+test('imported orders get readable ids built from the device id and creation time (no hash collisions)', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  await A.store.importLegacy(legacyData()); await tick();
+  const ids = [...server.data.keys()].filter(k => k.startsWith('orders/')).sort();
+  assert.deepEqual(ids, ['orders/legacy-10-1000', 'orders/legacy-11-2000']);
 });

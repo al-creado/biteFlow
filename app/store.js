@@ -50,7 +50,6 @@
     return { next: Number(r.next) || maxNum + 1, orders, products };
   }
 
-  const hashString = str => { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0; return h.toString(36); };
   const cleanItems = items => items.map(i => ({ name: i.name, qty: Math.max(1, Number(i.qty) || 1), price: Number(i.price) || 0 }));
 
   function createLocalStore({ storage, seed }) {
@@ -108,14 +107,13 @@
   // Writes are applied locally at once and are NOT awaited for server acknowledgement,
   // so the UI never hangs offline. Only addOrder waits (for its number) while online.
   // ---------------------------------------------------------------------------
-  const TX_TIMEOUT_MS = 4000;
   const BATCH_LIMIT = 500;
 
   function createCloudStore({ fb, db, onError }) {
     const orders = new Map(), products = new Map();
     const flags = { orders: null, products: null };   // metadata of the latest snapshot of each collection
     const listeners = new Set();
-    let status = 'syncing', counterDirty = false, reconciling = false;
+    let status = 'syncing';
     const unsubs = [];
 
     const ordersCol = () => fb.collection(db, 'orders');
@@ -143,35 +141,44 @@
       status = computeStatus();
       const snap = snapshot();
       listeners.forEach(cb => cb(snap));
-      if (counterDirty && status === 'synced') reconcileCounter();
+      if (status === 'synced' && [...orders.values()].some(o => o.provisional)) assignNumbers();
     }
     function load(map, snap) {
       map.clear();
       snap.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
     }
-    unsubs.push(fb.onSnapshot(ordersCol(), snap => { load(orders, snap); flags.orders = snap.metadata; emit(); }, err => onError && onError(err)));
-    unsubs.push(fb.onSnapshot(fb.collection(db, 'products'), snap => { load(products, snap); flags.products = snap.metadata; emit(); }, err => onError && onError(err)));
+    const listenOpts = { includeMetadataChanges: true };   // without this the SDK never reports offline/synced changes
+    const attach = () => {
+      unsubs.push(fb.onSnapshot(ordersCol(), listenOpts, snap => { load(orders, snap); flags.orders = snap.metadata; emit(); }, err => onError && onError(err)));
+      unsubs.push(fb.onSnapshot(fb.collection(db, 'products'), listenOpts, snap => { load(products, snap); flags.products = snap.metadata; emit(); }, err => onError && onError(err)));
+    };
+    attach();
 
-    // After offline numbering the shared counter may lag behind the highest number in use.
-    async function reconcileCounter() {
-      if (reconciling) return;
-      reconciling = true;
+    // New orders are written at once with a provisional number (so the UI never waits). Whenever the
+    // connection is healthy, each provisional order is given its final number from the shared counter.
+    const finalHighest = () => { let m = 0; orders.forEach(o => { if (!o.provisional && o.num > m) m = o.num; }); return m; };
+    let assigning = false, again = false;
+    async function assignNumbers() {
+      if (assigning) { again = true; return; }      // a snapshot arrived mid-run: look again when this run ends
+      assigning = true;
       try {
-        await fb.runTransaction(db, async tx => {
-          const snap = await tx.get(counterRef());
-          const next = snap.exists() ? snap.data().next : 1;
-          const want = highest() + 1;
-          if (next < want) tx.set(counterRef(), { next: want });
-        });
-        counterDirty = false;
-      } catch (e) { /* try again on the next synced snapshot */ }
-      reconciling = false;
+        do {
+          again = false;
+          const todo = [...orders.values()].filter(o => o.provisional).sort((a, b) => a.created - b.created).map(o => o.id);
+          for (const id of todo) {
+            await fb.runTransaction(db, async tx => {
+              const o = await tx.get(orderRef(id));
+              if (!o.exists() || !o.data().provisional) return;
+              const c = await tx.get(counterRef());
+              const n = Math.max(c.exists() ? c.data().next : 1, finalHighest() + 1);
+              tx.set(counterRef(), { next: n + 1 });
+              tx.update(orderRef(id), { num: n, provisional: false });
+            });
+          }
+        } while (again);
+      } catch (e) { /* offline or busy: tried again on the next synced snapshot */ }
+      assigning = false;
     }
-
-    const withTimeout = (p, ms) => new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('timeout')), ms);
-      p.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
-    });
 
     function nextColor(name) {
       const tmp = [...products.values()].map(p => ({ id: p.id, name: p.name, price: p.price, c: p.c }));
@@ -188,27 +195,14 @@
         if (flags.orders && flags.products) cb(snapshot());
         return () => listeners.delete(cb);
       },
-      destroy() { unsubs.forEach(u => u()); listeners.clear(); },
+      destroy() { unsubs.forEach(u => u()); unsubs.length = 0; listeners.clear(); },
+      restart() { unsubs.forEach(u => u()); unsubs.length = 0; flags.orders = flags.products = null; attach(); },
 
       async addOrder({ name, items, notes }) {
         const id = uid();
-        const base = { status: 'new', created: Date.now(), name: name || '', notes: notes || '', items: cleanItems(items) };
-        if (status !== 'offline') {
-          try {
-            const num = await withTimeout(fb.runTransaction(db, async tx => {
-              const snap = await tx.get(counterRef());
-              const n = Math.max(snap.exists() ? snap.data().next : 1, highest() + 1);
-              tx.set(counterRef(), { next: n + 1 });
-              tx.set(orderRef(id), { ...base, num: n });
-              return n;
-            }), TX_TIMEOUT_MS);
-            return { id, ...base, num };
-          } catch (e) { /* offline or slow: fall through to local numbering */ }
-        }
-        const num = highest() + 1;
-        counterDirty = true;
-        quiet(fb.setDoc(orderRef(id), { ...base, num }));
-        return { id, ...base, num };
+        const order = { status: 'new', created: Date.now(), name: name || '', notes: notes || '', items: cleanItems(items), num: highest() + 1, provisional: true };
+        quiet(fb.setDoc(orderRef(id), order));      // shown at once; the final number is assigned once the write is confirmed
+        return { id, ...order };
       },
       async updateOrder(id, fields) {
         const f = {};
@@ -258,7 +252,7 @@
           quiet(fb.setDoc(productRef(prod.id), { name: prod.name, price: prod.price, c: prod.c }));
         }
         // orders: stable ids make a repeat import (or the same data from another device) a no-op
-        const importId = o => 'legacy-' + hashString(o.id + '|' + o.created);
+        const importId = o => 'legacy-' + String(o.id).replace(/[^A-Za-z0-9_-]/g, '_') + '-' + o.created;
         const fresh = (legacy.orders || []).filter(o => !orders.has(importId(o)))
           .sort((a, b) => a.created - b.created || a.num - b.num);
         const keepNumbers = orders.size === 0;     // first device in: keep its numbers; otherwise number from the shared counter

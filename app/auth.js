@@ -9,6 +9,7 @@
     'auth/invalid-credential': WRONG, 'auth/wrong-password': WRONG, 'auth/user-not-found': WRONG, 'auth/invalid-email': WRONG,
     'auth/network-request-failed': 'No internet connection. Check your network and try again.',
     'permission-denied': 'This account is not allowed to use Amylicious.',
+    'auth/admin-restricted-operation': 'This account is not allowed to use Amylicious.',
     'auth/too-many-requests': 'Too many attempts. Try again in a few minutes.'
   };
   const errorMessage = code => MESSAGES[code] || 'Could not sign in. Please try again.';
@@ -16,12 +17,14 @@
   const googleAvailable = loc => !!loc && (loc.protocol === 'http:' || loc.protocol === 'https:');
 
   const PILL = {
-    local: ['local', 'Local only'], synced: ['ok', 'Synced'], syncing: ['busy', 'Syncing'], offline: ['warn', 'Offline']
+    local: ['local', 'Local only'], synced: ['ok', 'Synced'], syncing: ['busy', 'Syncing'], offline: ['warn', 'Offline'], error: ['warn', 'Sync problem']
   };
   let ctx = null;          // { FB, auth, user } once signed in to the cloud
   let mode = 'local';
-  let status = 'synced';
+  let status = 'syncing';
   let pendingMessage = '';
+  const RETRY_MS = [10000, 30000, 60000];
+  const FIRST_DATA_TIMEOUT_MS = 15000;
 
   const $ = s => document.querySelector(s);
 
@@ -32,7 +35,8 @@
     $('.pill-t', pill).textContent = text;
     const a = $('#aStatus'); if (a) a.textContent = mode === 'local'
       ? 'Orders are saved on this device only. Sign-in and sync are not set up yet.'
-      : text === 'Synced' ? 'Everything is saved and up to date.' : text === 'Syncing' ? 'Sending your latest changes…'
+            : text === 'Synced' ? 'Everything is saved and up to date.' : text === 'Syncing' ? 'Sending your latest changes…'
+      : text === 'Sync problem' ? 'Syncing stopped. Close and reopen the app to try again. Your changes on this device are kept.'
       : 'No connection. Your changes are kept and will sync when you are back online.';
     const e = $('#aEmail'); if (e) e.textContent = ctx && ctx.user ? ctx.user.email : '';
     const so = $('#signOutBtn'); if (so) so.hidden = mode === 'local';
@@ -105,7 +109,7 @@
     const fail = e => { $('#loginErr').textContent = errorMessage(e && e.code); };
     const busy = b => { submit.disabled = b; googleBtn.disabled = b; };
     $('#loginForm').onsubmit = e => {
-      e.preventDefault(); $('#loginErr').textContent = ''; busy(true);
+      e.preventDefault(); $('#loginErr').textContent = ''; $('#loginInfo').textContent = ''; busy(true);
       FB.signInWithEmailAndPassword(auth, $('#loginEmail').value.trim(), $('#loginPass').value)
         .catch(fail).finally(() => busy(false));
     };
@@ -114,6 +118,15 @@
       FB.signInWithPopup(auth, new FB.GoogleAuthProvider())
         .catch(e => { if (!e || e.code !== 'auth/popup-closed-by-user') fail(e); }).finally(() => busy(false));
     };
+    $('#forgotBtn').onclick = () => {
+      const email = $('#loginEmail').value.trim(), info = $('#loginInfo'), err = $('#loginErr');
+      const sent = 'If that email has an account, a reset link is on its way. Check your inbox.';
+      info.textContent = ''; err.textContent = '';
+      if (!email) { err.textContent = 'Type your email above first.'; return; }
+      FB.sendPasswordResetEmail(auth, email)
+        .then(() => { info.textContent = sent; })
+        .catch(e => { if (e && e.code === 'auth/network-request-failed') fail(e); else info.textContent = sent; });
+    };
     $('#signOutBtn').onclick = () => { dlg.close(); FB.signOut(auth); };
 
     let store = null;
@@ -121,13 +134,27 @@
       if (store) { store.destroy(); store = null; }
       ctx = { FB, auth, user };
       if (!user) { onStore(null, null); showLogin('form'); return; }
-      store = Store.createCloudStore({
+      let retries = 0;
+      const mine = Store.createCloudStore({
         fb: FB, db,
         onError: err => {
-          if (err && err.code === 'permission-denied') { pendingMessage = errorMessage('permission-denied'); FB.signOut(auth); }
+          if (store !== mine) return;
+          if (err && err.code === 'permission-denied') { pendingMessage = errorMessage('permission-denied'); FB.signOut(auth); return; }
+          // quota or network trouble ended the live connection: say so and try again a few times
+          setSyncStatus('error');
+          if (retries < RETRY_MS.length) setTimeout(() => { if (store === mine) mine.restart(); }, RETRY_MS[retries++]);
         }
       });
-      hideLogin(); onStore(store, user); paintPill();  offerWhenSynced(store, user);
+      store = mine;
+      status = 'syncing'; paintPill();
+      showLogin('loading');                          // keep "Loading your orders…" until the first data arrives
+      onStore(store, user);
+      let shown = false;
+      const reveal = () => { if (shown) return; shown = true; hideLogin(); offerWhenSynced(store, user); };
+      let first = null;
+      first = store.subscribe(() => { if (first) first(); reveal(); });
+      if (shown) first();
+      setTimeout(reveal, FIRST_DATA_TIMEOUT_MS);      // never leave the screen stuck
     });
   }
 
