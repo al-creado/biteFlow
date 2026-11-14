@@ -1,3 +1,5 @@
+const ICONS = {"burger": "<path d=\"M4 11a8 7 0 0 1 16 0z\"/><path d=\"M3 15h18\"/><path d=\"M5 15l1 3a2 2 0 0 0 2 1.5h8a2 2 0 0 0 2-1.5l1-3\"/>", "list": "<path d=\"M8 6h13M8 12h13M8 18h13\"/><path d=\"M3 6h.01M3 12h.01M3 18h.01\"/>", "download": "<path d=\"M12 4v11\"/><path d=\"M7 11l5 5 5-5\"/><path d=\"M5 20h14\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "check": "<path d=\"M5 12.5l4.5 4.5L19 7\"/>", "x": "<path d=\"M6 6l12 12M18 6L6 18\"/>", "back": "<path d=\"M19 12H5\"/><path d=\"M11 6l-6 6 6 6\"/>", "edit": "<path d=\"M4 20h4L19 9l-4-4L4 16z\"/>"};
+const ic = n => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const KEY = 'biteflow.v1';
 let state = load();
 function load() {
@@ -18,14 +20,14 @@ function load() {
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const $ = (s, r = document) => r.querySelector(s);
 const FLOW = ['new', 'ready', 'delivered'];
-const NEXT_LABEL = { new: 'Mark ready ✓', ready: 'Delivered ✓' };
+const NEXT_LABEL = { new: 'Mark ready', ready: 'Delivered' };
 function addLine(item) {
   const names = state.products.slice();
   if (item.name && !names.includes(item.name)) names.push(item.name);
   const row = document.createElement('div');
   row.className = 'line';
   row.innerHTML = `<select><option value="">Select product…</option>${names.map(n => `<option${n === item.name ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>
-    <input type="number" min="1" value="${item.qty}" aria-label="Quantity"><button type="button" class="x" title="Remove">✕</button>`;
+    <input type="number" min="1" value="${item.qty}" aria-label="Quantity"><button type="button" class="x" title="Remove">${ic('x')}</button>`;
   $('.x', row).onclick = () => row.remove();
   $('#lines').appendChild(row);
 }
@@ -72,9 +74,9 @@ function card(o) {
     <ul>${items}</ul>
     ${o.notes ? `<div class="notes">${esc(o.notes)}</div>` : ''}
     <div class="row">
-      ${i > 0 ? '<button data-act="back" title="Move back">←</button>' : ''}
-      ${i < 2 ? `<button class="primary go" data-act="next">${NEXT_LABEL[o.status]}</button>` : '<span class="go"></span>'}
-      <button data-act="edit">Edit</button>
+      ${i > 0 ? `<button data-act="back" title="Move back" aria-label="Move back">${ic('back')}</button>` : ''}
+      ${i < 2 ? `<button class="primary go" data-act="next">${ic('check')} ${NEXT_LABEL[o.status]}</button>` : '<span class="go"></span>'}
+      <button data-act="edit">${ic('edit')} Edit</button>
     </div></div>`;
 }
 
