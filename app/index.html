@@ -8,7 +8,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <header class="banner">
@@ -37,6 +37,7 @@
     <h3 id="dlgTitle">New order</h3>
     <label>Customer name <input id="fName" placeholder="e.g. Priya" autocomplete="off"></label>
     <div class="lbl">Items</div><div id="lines"></div><div id="noProd" class="hint" hidden>No products yet. Close this and add some under Products.</div><button type="button" id="addLine" class="addline"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add item</button>
+    <div class="total"><span>Total</span><b id="dtotal"></b></div>
     <label>Notes <input id="fNotes" placeholder="e.g. pickup Sunday 11am" autocomplete="off"></label>
     <div class="actions">
       <button type="button" id="delBtn" class="danger">Delete</button>
@@ -48,10 +49,10 @@
 </dialog>
 <dialog id="pdlg">
   <h3>Products</h3>
-  <form id="pform" class="padd"><input id="pName" placeholder="New product, e.g. Chicken Cheese Croquette" autocomplete="off"><button class="primary">Add</button></form>
+  <form id="pform" class="padd"><input id="pName" placeholder="New product" autocomplete="off"><input id="pPrice" type="number" min="0" step="any" placeholder="Price" aria-label="Price"><button class="primary">Add</button></form>
   <ul id="plist"></ul>
   <div class="actions"><button type="button" id="seedBtn">Add Amylicious menu</button><span class="spacer"></span><button type="button" id="pClose">Done</button></div>
 </dialog>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

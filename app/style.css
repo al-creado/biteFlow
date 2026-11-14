@@ -57,3 +57,16 @@ input,textarea{display:block;width:100%;margin-top:4px}
 .actions{display:flex;gap:8px;flex-wrap:wrap}.spacer{flex:1}
 .ic{width:1.1em;height:1.1em;flex:none;vertical-align:-.18em}
 @media(max-width:800px){main{grid-template-columns:1fr}.col{min-height:240px}.banner-in{padding:12px 26px}.script{font-size:38px;padding-left:12px}.tag{padding-left:14px}}
+
+.line .lp{align-self:center;min-width:58px;text-align:right;font-weight:600;font-size:13px;color:var(--action)}
+.card li{display:flex;justify-content:space-between;gap:8px}
+.card ul{list-style:none;padding-left:2px}
+.card li .lp{color:var(--muted);font-weight:600;font-size:14px}
+.ctotal{display:flex;justify-content:space-between;border-top:1px dashed var(--line);padding-top:6px;margin-top:4px;font-weight:600}
+.ctotal b{color:var(--action)}
+.total{display:flex;justify-content:space-between;align-items:center;margin:2px 0 14px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:14px;font-weight:600}
+.total b{font-size:20px;color:var(--action)}
+.padd #pPrice{width:90px;flex:none}
+#plist li .pn{flex:1;min-width:0}
+.pp{display:flex;align-items:center;gap:4px;color:var(--muted)}
+.pp input{width:84px;margin:0;padding:6px 8px}
