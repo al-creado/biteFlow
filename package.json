@@ -16,9 +16,33 @@
   "build": {
     "appId": "com.biteflow.app",
     "productName": "Amylicious",
-    "directories": { "buildResources": "build" },
-    "files": ["main.js", "app/**/*", "build/icon.png"],
-    "mac": { "target": "dmg", "category": "public.app-category.business" },
-    "win": { "target": "nsis" }
+    "directories": {
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "updater.js",
+      "app/**/*",
+      "build/icon.png"
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.business",
+      "artifactName": "Amylicious-${version}.${ext}"
+    },
+    "win": {
+      "target": "nsis",
+      "artifactName": "Amylicious-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "al-creado",
+        "repo": "biteFlow"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   }
 }

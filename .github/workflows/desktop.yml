@@ -21,6 +21,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Set app version from the release version
+        shell: bash
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then V="$GITHUB_REF_NAME"; else V="${{ inputs.version }}"; fi
+          V="${V#v}"
+          if [ -n "$V" ]; then npm version "$V" --no-git-tag-version --allow-same-version; fi
       - run: npm install
       - run: npm run dist
         env:
@@ -31,6 +37,8 @@ jobs:
           path: |
             dist/*.exe
             dist/*.dmg
+            dist/*.blockmap
+            dist/latest*.yml
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
