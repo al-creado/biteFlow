@@ -77,4 +77,20 @@ document.addEventListener('click', e => {
   o.status = FLOW[FLOW.indexOf(o.status) + (act === 'next' ? 1 : -1)];
   save(); render();
 });
+$('#exportBtn').onclick = () => {
+  const q = v => '"' + String(v).replace(/"/g, '""') + '"';
+  const label = { new: 'New', ready: 'Ready', delivered: 'Delivered' };
+  const rows = [['Order #', 'Status', 'Created', 'Name / table', 'Items', 'Notes']];
+  for (const o of state.orders) {
+    const d = new Date(o.created), p = n => String(n).padStart(2, '0');
+    const when = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    rows.push([o.num, label[o.status], when, o.name, o.items.join('; '), o.notes]);
+  }
+  const csv = '\uFEFF' + rows.map(r => r.map(q).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `biteflow-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
 render();

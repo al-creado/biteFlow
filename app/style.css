@@ -33,3 +33,4 @@ label{display:block;margin-bottom:12px;color:var(--muted);font-size:14px}
 input,textarea{display:block;width:100%;margin-top:4px;background:#1b1b1f;color:var(--text);border:1px solid #444;border-radius:6px;padding:8px;font:inherit}
 .actions{display:flex;gap:8px}.spacer{flex:1}
 @media(max-width:800px){main{grid-template-columns:1fr;overflow:auto}.col{min-height:260px}}
+.hbtns{display:flex;gap:8px}
