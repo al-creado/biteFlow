@@ -10,3 +10,5 @@ Flow: **New → Ready → Delivered**. Create, edit, move forward/back, delete. 
 Export: the **Export to Excel** button downloads all orders as a `.csv` that opens directly in Excel.
 
 Products: save your menu under **Products**, then build orders by picking a product and a quantity for each line.
+
+Sync: orders and products are shared across devices through Firebase after a one-time sign-in. Setup steps: [docs/firebase-setup.md](docs/firebase-setup.md).

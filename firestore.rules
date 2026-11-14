@@ -1,0 +1,18 @@
+rules_version = '2';
+
+// Only the shop's own accounts may read or write. Replace OWNER_EMAIL below with the
+// address(es) allowed to sign in (for example 'you@gmail.com', 'helper@gmail.com') when you
+// paste these rules into Firebase console > Firestore Database > Rules. Do not commit real
+// addresses to this public repository.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function allowed() {
+      return request.auth != null
+        && request.auth.token.email in ['OWNER_EMAIL'];
+    }
+    match /orders/{id}   { allow read, write: if allowed(); }
+    match /products/{id} { allow read, write: if allowed(); }
+    match /meta/{id}     { allow read, write: if allowed(); }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

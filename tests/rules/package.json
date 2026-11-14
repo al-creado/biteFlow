@@ -1,0 +1,6 @@
+{
+  "name": "amylicious-rules-tests",
+  "private": true,
+  "description": "Security-rule tests. Needs Java and the Firestore emulator (see docs/firebase-setup.md).",
+  "dependencies": { "@firebase/rules-unit-testing": "^3.0.4", "firebase": "^10.14.0" }
+}
