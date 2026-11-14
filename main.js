@@ -2,7 +2,7 @@ const { app, BrowserWindow, Menu } = require('electron');
 const path = require('path');
 
 function createWindow() {
-  const win = new BrowserWindow({ width: 1280, height: 800, title: 'biteFlow', backgroundColor: '#1b1b1f' });
+  const win = new BrowserWindow({ width: 1280, height: 800, title: 'Amylicious Orders', backgroundColor: '#FFC2DE', icon: path.join(__dirname, 'build', 'icon.png') });
   Menu.setApplicationMenu(null);
   win.loadFile(path.join(__dirname, 'app', 'index.html'));
 }

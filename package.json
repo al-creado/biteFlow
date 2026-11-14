@@ -1,7 +1,7 @@
 {
   "name": "biteflow",
   "version": "1.0.0",
-  "description": "Fast-food style order tracker",
+  "description": "Amylicious order tracker",
   "main": "main.js",
   "author": "biteFlow",
   "license": "MIT",
@@ -15,8 +15,9 @@
   },
   "build": {
     "appId": "com.biteflow.app",
-    "productName": "biteFlow",
-    "files": ["main.js", "app/**/*"],
+    "productName": "Amylicious Orders",
+    "directories": { "buildResources": "build" },
+    "files": ["main.js", "app/**/*", "build/icon.png"],
     "mac": { "target": "dmg", "category": "public.app-category.business" },
     "win": { "target": "nsis" }
   }
