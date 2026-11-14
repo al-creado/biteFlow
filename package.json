@@ -1,0 +1,23 @@
+{
+  "name": "biteflow",
+  "version": "1.0.0",
+  "description": "Fast-food style order tracker",
+  "main": "main.js",
+  "author": "biteFlow",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.biteflow.app",
+    "productName": "biteFlow",
+    "files": ["main.js", "app/**/*"],
+    "mac": { "target": "dmg", "category": "public.app-category.business" },
+    "win": { "target": "nsis" }
+  }
+}
