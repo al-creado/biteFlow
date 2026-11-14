@@ -150,7 +150,6 @@ function renderProducts() {
     <button data-id="${esc(p.id)}" data-del="1">Remove</button></li>`).join('') || '<li class="empty">No products yet</li>';
 }
 $('#prodBtn').onclick = () => { renderProducts(); pdlg.showModal(); $('#pName').focus(); };
-$('#seedBtn').onclick = async () => { await store.seedProducts(SEED); renderProducts(); };
 $('#pClose').onclick = () => pdlg.close();
 $('#pform').onsubmit = async e => {
   e.preventDefault();
