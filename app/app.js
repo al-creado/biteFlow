@@ -6,49 +6,22 @@ const SEED = [
   { name: 'Chicken Meat Loaf Bar (450 gms)', price: 500 },
   { name: 'Prawn (Kardi) Potato Chops (3 nos)', price: 120 }
 ];
-const KEY = 'biteflow.v1';
 const PALETTE = [
   ['#FFD6E8', '#C73B85'], ['#CFF1DD', '#26784A'], ['#D3E8FF', '#2B6CB0'], ['#FFF0B8', '#7A6100'],
   ['#E5DBFF', '#6B46C1'], ['#FFDCC7', '#A9440F'], ['#C9F0F0', '#0F766E'], ['#E3F3C2', '#4F6F0D']
 ];
-function assignColors(products) {
-  const used = new Set(products.filter(p => Number.isInteger(p.c)).map(p => p.c));
-  products.forEach(p => {
-    if (Number.isInteger(p.c)) return;
-    let c = PALETTE.findIndex((_, i) => !used.has(i));
-    if (c < 0) c = products.indexOf(p) % PALETTE.length;
-    p.c = c; used.add(c);
+let state = { orders: [], products: [], status: 'synced' };
+let store = null, unsubscribe = null;
+function setStore(next) {
+  if (unsubscribe) unsubscribe();
+  store = next;
+  unsubscribe = next.subscribe(snap => {
+    state = snap;
+    render();
+    const pl = document.getElementById('plist');
+    if (pdlg.open && !(pl && pl.contains(document.activeElement))) renderProducts();
   });
 }
-const seedPrice = n => (SEED.find(p => p.name.toLowerCase() === String(n).toLowerCase()) || {}).price || 0;
-let state = load();
-function load() {
-  try {
-    const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && Array.isArray(s.orders)) {
-      s.products = (Array.isArray(s.products) ? s.products : []).map(p =>
-        typeof p === 'string' ? { name: p, price: seedPrice(p) } : { name: p.name, price: Number(p.price) || 0, c: p.c });
-      assignColors(s.products);
-      const priceOf = n => (s.products.find(p => p.name === n) || {}).price || 0;
-      s.orders.forEach(o => {
-        if (o.status === 'completed') o.status = 'delivered';
-        o.items = o.items.map(i => {
-          if (typeof i === 'string') {
-            const m = i.match(/^\s*(\d+)\s*x\s*(.+)$/i);
-            i = m ? { name: m[2].trim(), qty: +m[1] } : { name: i, qty: 1 };
-          }
-          if (typeof i.price !== 'number') i.price = priceOf(i.name);
-          return i;
-        });
-      });
-      return s;
-    }
-  } catch (e) {}
-  const fresh = { next: 1, orders: [], products: SEED.map(p => ({ ...p })) };
-  assignColors(fresh.products);
-  return fresh;
-}
-function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const $ = (s, r = document) => r.querySelector(s);
 const FLOW = ['new', 'ready', 'delivered'];
 const NEXT_LABEL = { new: 'Mark ready', ready: 'Delivered' };
@@ -170,37 +143,26 @@ $('#addLine').onclick = () => addLine({ name: '', qty: 1 });
 
 const pdlg = $('#pdlg');
 function renderProducts() {
-  $('#plist').innerHTML = state.products.map((p, i) => `<li><span class="pn">${esc(p.name)}</span>
-    <span class="pp"><span>₹</span><input type="number" min="0" step="any" value="${p.price}" data-i="${i}" aria-label="Price of ${esc(p.name)}"></span>
-    <button data-i="${i}" data-del="1">Remove</button></li>`).join('') || '<li class="empty">No products yet</li>';
+  $('#plist').innerHTML = state.products.map(p => `<li><span class="pn">${esc(p.name)}</span>
+    <span class="pp"><span>₹</span><input type="number" min="0" step="any" value="${p.price}" data-id="${esc(p.id)}" aria-label="Price of ${esc(p.name)}"></span>
+    <button data-id="${esc(p.id)}" data-del="1">Remove</button></li>`).join('') || '<li class="empty">No products yet</li>';
 }
 $('#prodBtn').onclick = () => { renderProducts(); pdlg.showModal(); $('#pName').focus(); };
-$('#seedBtn').onclick = () => {
-  SEED.forEach(s => {
-    const ex = state.products.find(p => p.name.toLowerCase() === s.name.toLowerCase());
-    if (!ex) state.products.push({ ...s }); else if (!ex.price) ex.price = s.price;
-  });
-  assignColors(state.products);
-  save(); renderProducts();
-};
+$('#seedBtn').onclick = async () => { await store.seedProducts(SEED); renderProducts(); };
 $('#pClose').onclick = () => pdlg.close();
-$('#pform').onsubmit = e => {
+$('#pform').onsubmit = async e => {
   e.preventDefault();
   const n = $('#pName').value.trim(), price = Math.max(0, Number($('#pPrice').value) || 0);
-  if (n) {
-    const ex = state.products.find(p => p.name.toLowerCase() === n.toLowerCase());
-    if (ex) ex.price = price; else { state.products.push({ name: n, price }); assignColors(state.products); }
-    save(); renderProducts();
-  }
+  if (n) { await store.upsertProduct({ name: n, price }); renderProducts(); }
   $('#pName').value = ''; $('#pPrice').value = ''; $('#pName').focus();
 };
-$('#plist').onclick = e => {
+$('#plist').onclick = async e => {
   const b = e.target.closest('button[data-del]'); if (!b) return;
-  state.products.splice(+b.dataset.i, 1); save(); renderProducts();
+  await store.removeProduct(b.dataset.id); renderProducts();
 };
 $('#plist').onchange = e => {
-  const inp = e.target.closest('input[data-i]'); if (!inp) return;
-  state.products[+inp.dataset.i].price = Math.max(0, Number(inp.value) || 0); save();
+  const inp = e.target.closest('input[data-id]'); if (!inp) return;
+  store.setProductPrice(inp.dataset.id, Math.max(0, Number(inp.value) || 0));
 };
 
 const dlg = $('#dlg'), form = $('#form');
@@ -209,7 +171,7 @@ let editingId = null;
 function render() {
   for (const status of FLOW) {
     const col = $(`.col[data-status=${status}]`);
-    const orders = state.orders.filter(o => o.status === status);
+    const orders = state.orders.filter(o => o.status === status).sort((a, b) => a.num - b.num);
     if (status === 'delivered') orders.reverse();
     $('.count', col).textContent = orders.length || '';
     $('.list', col).innerHTML = orders.length ? orders.map(card).join('') : '<div class="empty">No orders</div>';
@@ -249,9 +211,7 @@ form.addEventListener('submit', e => {
   })).filter(i => i.name);
   if (!items.length) { e.preventDefault(); alert('Add at least one product with a quantity.'); return; }
   const data = { name: titleCase($('#fName').value.trim()), items, notes: $('#fNotes').value.trim() };
-  if (editingId) Object.assign(state.orders.find(o => o.id === editingId), data);
-  else state.orders.push({ id: Date.now() + Math.random(), num: state.next++, status: 'new', created: Date.now(), ...data });
-  save(); render();
+  if (editingId) store.updateOrder(editingId, data); else store.addOrder(data);
 });
 $('#cancelBtn').onclick = () => dlg.close();
 dlg.addEventListener('cancel', e => { if (openDD) e.preventDefault(); });
@@ -260,23 +220,20 @@ dlg.addEventListener('scroll', closeDD, true);
 $('#fName').addEventListener('blur', e => { e.target.value = titleCase(e.target.value); });
 $('#delBtn').onclick = () => {
   if (!confirm('Delete this order?')) return;
-  state.orders = state.orders.filter(o => o.id !== editingId);
-  save(); render(); dlg.close();
+  store.deleteOrder(editingId); dlg.close();
 };
 $('#newBtn').onclick = () => openDlg(null);
 $('#clearBtn').onclick = () => {
   if (!confirm('Remove all delivered orders?')) return;
-  state.orders = state.orders.filter(o => o.status !== 'delivered');
-  save(); render();
+  store.clearDelivered();
 };
 document.addEventListener('click', e => {
   const b = e.target.closest('button[data-act]'); if (!b) return;
-  const o = state.orders.find(x => x.id === Number(b.closest('.card').dataset.id));
+  const o = state.orders.find(x => x.id === b.closest('.card').dataset.id);
   if (!o) return;
   const act = b.dataset.act;
   if (act === 'edit') return openDlg(o);
-  o.status = FLOW[FLOW.indexOf(o.status) + (act === 'next' ? 1 : -1)];
-  save(); render();
+  store.setStatus(o.id, FLOW[FLOW.indexOf(o.status) + (act === 'next' ? 1 : -1)]);
 });
 $('#exportBtn').onclick = () => {
   const q = v => '"' + String(v).replace(/"/g, '""') + '"';
@@ -295,4 +252,7 @@ $('#exportBtn').onclick = () => {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
-render();
+const memoryStorage = (() => { const m = {}; return { getItem: k => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); } }; })();
+let storage = memoryStorage;
+try { storage = window.localStorage; storage.getItem('biteflow.v1'); } catch (e) { storage = memoryStorage; }
+setStore(Store.createLocalStore({ storage, seed: SEED }));

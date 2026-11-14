@@ -7,7 +7,9 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --publish never"
+    "dist": "electron-builder --publish never",
+    "test": "node --test tests/*.test.js",
+    "test:e2e": "node tests/e2e/local-flow.js"
   },
   "devDependencies": {
     "electron": "^33.2.0",
