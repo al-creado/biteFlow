@@ -1,9 +1,9 @@
 {
   "name": "biteflow",
   "version": "1.0.0",
-  "description": "biteFlow order tracker",
+  "description": "Amylicious order tracker",
   "main": "main.js",
-  "author": "biteFlow",
+  "author": "Amylicious",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.biteflow.app",
-    "productName": "biteFlow",
+    "productName": "Amylicious",
     "directories": { "buildResources": "build" },
     "files": ["main.js", "app/**/*", "build/icon.png"],
     "mac": { "target": "dmg", "category": "public.app-category.business" },

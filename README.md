@@ -1,4 +1,4 @@
-# biteFlow
+# Amylicious
 
 Fast-food style order tracker.
 
