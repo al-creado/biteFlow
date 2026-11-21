@@ -89,6 +89,24 @@ const { serve } = require('../helpers/serve.js');
   await m.goto(srv.url);
   assert.ok(await m.evaluate(() => document.documentElement.scrollWidth <= 390), 'no horizontal scroll');
 
+  // 9. products that only exist inside old orders are on the previous menu and can be added back
+  const ctx2 = await b.newContext({ viewport: { width: 1100, height: 800 } });
+  const r = await ctx2.newPage(); r.on('pageerror', e => errs.push(e.message));
+  const longAgo = Date.now() - 40 * 24 * 3600 * 1000;
+  await r.addInitScript(old => { if (!localStorage.getItem('biteflow.v1')) localStorage.setItem('biteflow.v1', old); }, JSON.stringify({
+    products: [{ id: 'p1', name: 'Croquette', price: 100, c: 0 }],
+    orders: [{ id: 'x1', num: 1, status: 'delivered', created: longAgo, name: 'Old', notes: '', items: [{ name: 'Mutton Samosa (3 nos)', qty: 2, price: 90, c: 4 }, { name: 'Croquette', qty: 1, price: 100, c: 0 }] }]
+  }));
+  await r.goto(srv.url);
+  await r.click('#prodBtn');
+  assert.equal(await r.locator('#plist li:not(.empty)').count(), 1);               // the menu itself is untouched
+  assert.equal(await r.locator('#histWrap').isVisible(), true);
+  assert.match(await r.locator('#hlist').innerText(), /Mutton Samosa \(3 nos\)/);
+  assert.match(await r.locator('#hlist').innerText(), /₹90/);
+  await r.click('#hlist li:has-text("Mutton Samosa") button[data-add]');
+  assert.equal(await r.locator('#plist li:not(.empty)').count(), 2);
+  assert.equal(await r.inputValue('#plist li:has-text("Mutton Samosa") input'), '90');
+
   assert.deepEqual(errs, []);
   await b.close(); srv.close();
   console.log('weekends OK');

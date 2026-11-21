@@ -75,7 +75,28 @@
     });
     const history = (Array.isArray(r.history) ? r.history : []).filter(h => h && h.name).map(h => ({ id: historyId(h.name), name: h.name, price: Number(h.price) || 0, c: h.c }));
     const maxNum = orders.reduce((m, o) => Math.max(m, o.num), 0);
-    return { next: Number(r.next) || maxNum + 1, orders, products, history };
+    return { next: Number(r.next) || maxNum + 1, orders, products, history, backfilled: !!r.backfilled };
+  }
+
+  // Products that appear in past orders but not in `existing` (the previous menu). Newest price and colour win;
+  // the name keeps the capitalisation of the newest order that had a price.
+  function historyFromOrders(orders, existing) {
+    const have = new Set(existing.map(h => historyId(h.name)));
+    const latest = new Map();
+    [...orders].sort((a, b) => a.created - b.created).forEach(o => (o.items || []).forEach(i => {
+      const id = historyId(i.name);
+      if (have.has(id)) return;
+      const prev = latest.get(id) || {};
+      latest.set(id, {
+        name: i.price ? i.name : (prev.name || i.name),
+        price: i.price || prev.price || 0,
+        c: Number.isInteger(i.c) ? i.c : prev.c
+      });
+    }));
+    const out = [...latest.values()];
+    const all = existing.map(e => ({ ...e })).concat(out);
+    assignColors(all);                                    // colours for the ones that have none, distinct where possible
+    return out;
   }
 
   const cleanItems = items => items.map(i => {
@@ -130,6 +151,10 @@
       data.products.push(p); assignColors(menu()); return p;
     };
     data.products.forEach(touchHistory);
+    if (!data.backfilled) {                      // once: bring back products that only survive inside past orders
+      historyFromOrders(data.orders, data.history).forEach(e => data.history.push({ id: historyId(e.name), name: e.name, price: e.price, c: e.c }));
+      data.backfilled = true;
+    }
     const snapshot = () => clone(buildSnapshot({ orders: data.orders, products: data.products, history: data.history, selected, current: current(), status: 'synced' }));
     const emit = () => { const snap = snapshot(); listeners.forEach(cb => cb(snap)); };
     const commit = () => {
@@ -215,6 +240,7 @@
     const orders = new Map(), products = new Map(), history = new Map();
     const flags = { orders: null, products: null, meta: null };   // metadata of the latest snapshot of each collection
     const listeners = new Set();
+    let ordersBackfilled = false, backfillStarted = false;
     let status = 'syncing';
     let selected = weekKeyOf(clock());
     const unsubs = [];
@@ -247,6 +273,7 @@
       if (!flags.orders || !flags.products || !flags.meta) return;   // wait for the first data from every collection
       status = computeStatus();
       migrateOldProducts();
+      if (status === 'synced') recoverFromOrders();
       const snap = snapshot();
       listeners.forEach(cb => cb(snap));
       if (status === 'synced' && [...orders.values()].some(o => o.provisional)) assignNumbers();
@@ -270,6 +297,15 @@
         if (!history.has(historyId(p.name))) writeHistory(p);
       });
     }
+    // Once per shop: products that only survive inside past orders join the previous menu. A marker document stops
+    // it from running again, so something you later remove with "forget" stays gone. Only while fully synced, so a
+    // stale or partial copy of the orders can never write half a list.
+    function recoverFromOrders() {
+      if (ordersBackfilled || backfillStarted) return;
+      backfillStarted = true;
+      historyFromOrders([...orders.values()], [...history.values()]).forEach(e => writeHistory(e));
+      quiet(fb.setDoc(fb.doc(db, 'meta', 'backfill-orders-v1'), { done: true, at: clock() }));
+    }
     const listenOpts = { includeMetadataChanges: true };   // without this the SDK never reports offline/synced changes
     const attach = () => {
       unsubs.push(fb.onSnapshot(ordersCol(), listenOpts, snap => { load(orders, snap); flags.orders = snap.metadata; emit(); }, err => onError && onError(err)));
@@ -277,6 +313,7 @@
       unsubs.push(fb.onSnapshot(fb.collection(db, 'meta'), listenOpts, snap => {
         history.clear();
         snap.docs.forEach(d => { if (d.id.startsWith('menu-')) history.set(d.id, { id: d.id, ...d.data() }); });
+        ordersBackfilled = snap.docs.some(d => d.id === 'backfill-orders-v1');
         flags.meta = snap.metadata; emit();
       }, err => onError && onError(err)));
     };
@@ -326,7 +363,7 @@
       },
       setWeek(key) { selected = key; emit(); },
       destroy() { unsubs.forEach(u => u()); unsubs.length = 0; listeners.clear(); },
-      restart() { unsubs.forEach(u => u()); unsubs.length = 0; flags.orders = flags.products = flags.meta = null; migrated.clear(); attach(); },
+      restart() { unsubs.forEach(u => u()); unsubs.length = 0; flags.orders = flags.products = flags.meta = null; migrated.clear(); backfillStarted = false; attach(); },
 
       async addOrder({ name, items, notes }) {
         const id = uid();
@@ -452,5 +489,5 @@
     };
   }
 
-  return { KEY, PALETTE_SIZE, historyId, weekKeyOf, addWeeks, weekLabel, orderTotal, uid, clone, cleanItems, assignColors, normalizeLegacy, createLocalStore, createCloudStore };
+  return { KEY, PALETTE_SIZE, historyId, weekKeyOf, addWeeks, weekLabel, orderTotal, uid, clone, cleanItems, assignColors, normalizeLegacy, historyFromOrders, createLocalStore, createCloudStore };
 });

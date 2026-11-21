@@ -586,3 +586,62 @@ test('cloud: a number picked offline uses the highest number of that weekend', a
   const o = await A.store.addOrder({ name: 'offline next weekend', items: [item()], notes: '' });
   assert.equal(o.num, 1);                                                  // not 2: it belongs to the other weekend
 });
+
+
+// ---------- previous menu recovered from past orders ----------
+const pastOrders = () => [
+  { id: 'o1', num: 1, status: 'delivered', created: sat(2026, 11, 3), week: '2026-11-08', name: 'A', notes: '', items: [{ name: 'Puff', qty: 2, price: 50, c: 3 }, { name: 'Croquette', qty: 1, price: 90, c: 0 }] },
+  { id: 'o2', num: 2, status: 'delivered', created: sat(2026, 11, 10), week: '2026-11-15', name: 'B', notes: '', items: [{ name: 'Puff', qty: 1, price: 60, c: 3 }, { name: 'Samosa', qty: 3, price: 90 }] },
+  { id: 'o3', num: 3, status: 'delivered', created: sat(2026, 11, 11), week: '2026-11-15', name: 'C', notes: '', items: [{ name: 'puff', qty: 1, price: 0 }] }
+];
+
+test('historyFromOrders lists each product used in orders once, newest price and colour winning, skipping known ones', () => {
+  const known = [{ id: Store.historyId('Croquette'), name: 'Croquette', price: 100, c: 0 }];
+  const out = Store.historyFromOrders(pastOrders(), known);
+  assert.deepEqual(out.map(e => e.name).sort(), ['Puff', 'Samosa']);
+  const puff = out.find(e => e.name === 'Puff');
+  assert.equal(puff.price, 60);                       // newest non-zero price
+  assert.equal(puff.c, 3);
+  const samosa = out.find(e => e.name === 'Samosa');
+  assert.equal(samosa.price, 90);
+  assert.ok(Number.isInteger(samosa.c) && samosa.c !== 0 && samosa.c !== 3, 'a free colour was chosen');
+});
+
+test('local store adds products from past orders to the previous menu once, and forgetting one sticks', async () => {
+  const init = { 'biteflow.v1': JSON.stringify({ next: 4, products: [{ id: 'p1', name: 'Croquette', price: 100, c: 0, week: WEEK }], orders: pastOrders() }) };
+  const storage = memStorage(init);
+  const mkStore = () => Store.createLocalStore({ storage, seed: SEED, now: () => FIXED });
+  let s = mkStore(); let l = last(); s.subscribe(l.cb);
+  assert.deepEqual(l.get().history.map(h => h.name.toLowerCase()).sort(), ['croquette', 'puff', 'samosa']);
+  assert.equal(l.get().products.length, 1);                                  // the menu itself is untouched
+  const puff = l.get().history.find(h => h.name.toLowerCase() === 'puff');
+  await s.forgetHistory(puff.id);
+  s = mkStore(); l = last(); s.subscribe(l.cb);
+  assert.deepEqual(l.get().history.map(h => h.name.toLowerCase()).sort(), ['croquette', 'samosa']);   // not brought back
+});
+
+test('cloud adds products from past orders to the previous menu once, and forgetting one sticks', async () => {
+  const server = createFakeServer();
+  pastOrders().forEach(o => { const { id, ...rest } = o; server.data.set('orders/' + id, rest); });
+  server.data.set('products/p1', { name: 'Croquette', price: 100, c: 0, week: WEEK });
+  const A = cloud(server); await tick(12);
+  assert.deepEqual(A.snap().history.map(h => h.name.toLowerCase()).sort(), ['croquette', 'puff', 'samosa']);
+  assert.ok(server.get('meta/backfill-orders-v1'));
+  const writes = () => server.log.filter(op => op.path.startsWith('meta/')).length;
+  const before = writes();
+  const B = cloud(server); await tick(12);                                      // another device: nothing more to write
+  assert.equal(writes(), before);
+  const puff = A.snap().history.find(h => h.name.toLowerCase() === 'puff');
+  await A.store.forgetHistory(puff.id); await tick(12);
+  const C = cloud(server); await tick(12);
+  assert.equal(C.snap().history.some(h => h.name.toLowerCase() === 'puff'), false);
+});
+
+test('cloud does not recover products from orders while offline (the orders it sees may be incomplete)', async () => {
+  const server = createFakeServer();
+  pastOrders().forEach(o => { const { id, ...rest } = o; server.data.set('orders/' + id, rest); });
+  const A = cloud(server, { online: false }); await tick(12);
+  assert.equal(server.get('meta/backfill-orders-v1'), undefined);
+  A.client.setOnline(true); await tick(12);
+  assert.ok(server.get('meta/backfill-orders-v1'));
+});
