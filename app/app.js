@@ -10,12 +10,12 @@ const PALETTE = [
   ['#FFD6E8', '#C73B85'], ['#CFF1DD', '#26784A'], ['#D3E8FF', '#2B6CB0'], ['#FFF0B8', '#7A6100'],
   ['#E5DBFF', '#6B46C1'], ['#FFDCC7', '#A9440F'], ['#C9F0F0', '#0F766E'], ['#E3F3C2', '#4F6F0D']
 ];
-let state = { orders: [], products: [], status: 'synced' };
+let state = { orders: [], products: [], history: [], status: 'synced' };
 let store = null, unsubscribe = null;
 function setStore(next) {
   if (unsubscribe) unsubscribe();
   store = next; unsubscribe = null;
-  if (!next) { state = { orders: [], products: [], status: 'synced' }; render(); return; }
+  if (!next) { state = { orders: [], products: [], history: [], status: 'synced' }; render(); return; }
   unsubscribe = next.subscribe(snap => {
     state = snap;
     Auth.setSyncStatus(snap.status, next.kind);
@@ -148,6 +148,14 @@ function renderProducts() {
   $('#plist').innerHTML = state.products.map(p => `<li><span class="pn">${esc(p.name)}</span>
     <span class="pp"><span>₹</span><input type="number" min="0" step="any" value="${p.price}" data-id="${esc(p.id)}" aria-label="Price of ${esc(p.name)}"></span>
     <button data-id="${esc(p.id)}" data-del="1">Remove</button></li>`).join('') || '<li class="empty">No products yet</li>';
+  // previous menu: every product ever added that is not on the menu right now
+  const onMenu = new Set(state.products.map(p => p.name.toLowerCase()));
+  const missing = (state.history || []).filter(h => !onMenu.has(h.name.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name));
+  $('#histWrap').hidden = !missing.length;
+  $('#hlist').innerHTML = missing.map(h => `<li><span class="pn">${Number.isInteger(h.c) ? `<i class="dot" style="background:${PALETTE[h.c % PALETTE.length][1]}"></i>` : ''}${esc(h.name)}</span>
+    <span class="hp">${h.price ? money(h.price) : ''}</span>
+    <button data-add="${esc(h.id)}">Add</button>
+    <button class="icon-btn" data-forget="${esc(h.id)}" title="Remove from previous menu" aria-label="Remove ${esc(h.name)} from previous menu">${ic('x')}</button></li>`).join('');
 }
 $('#prodBtn').onclick = () => { renderProducts(); pdlg.showModal(); $('#pName').focus(); };
 $('#pClose').onclick = () => pdlg.close();
@@ -161,6 +169,14 @@ $('#plist').onclick = async e => {
   const b = e.target.closest('button[data-del]'); if (!b) return;
   await store.removeProduct(b.dataset.id); renderProducts();
 };
+$('#hlist').onclick = async e => {
+  const add = e.target.closest('button[data-add]'), forget = e.target.closest('button[data-forget]');
+  if (add) await store.restoreProduct(add.dataset.add);
+  else if (forget) await store.forgetHistory(forget.dataset.forget);
+  else return;
+  renderProducts();
+};
+$('#histAll').onclick = async () => { await store.restoreAll(); renderProducts(); };
 $('#plist').onchange = e => {
   const inp = e.target.closest('input[data-id]'); if (!inp) return;
   store.setProductPrice(inp.dataset.id, Math.max(0, Number(inp.value) || 0));

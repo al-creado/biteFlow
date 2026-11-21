@@ -8,7 +8,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
 <section id="login" class="login" hidden data-state="form">
@@ -81,12 +81,17 @@
   <h3>Products</h3>
   <form id="pform" class="padd"><input id="pName" placeholder="New product" autocomplete="off"><input id="pPrice" type="number" min="0" step="any" placeholder="Price" aria-label="Price"><button class="primary">Add</button></form>
   <ul id="plist"></ul>
+  <section id="histWrap" class="hist" hidden>
+    <div class="hist-head"><h4>Previous menu</h4><button type="button" id="histAll">Add all</button></div>
+    <p class="hist-note">Every product you have added is kept here, even after you remove it from the menu.</p>
+    <ul id="hlist"></ul>
+  </section>
   <div class="actions"><span class="spacer"></span><button type="button" id="pClose">Done</button></div>
 </dialog>
-<script src="firebase-config.js?v=18"></script>
-<script src="vendor/firebase.js?v=18"></script>
-<script src="store.js?v=18"></script>
-<script src="auth.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="firebase-config.js?v=19"></script>
+<script src="vendor/firebase.js?v=19"></script>
+<script src="store.js?v=19"></script>
+<script src="auth.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

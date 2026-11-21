@@ -215,7 +215,7 @@ test('cloud store reports snapshot errors through onError', async () => {
   Store.createCloudStore({ fb: client.fb, db: client.db, onError: e => errs.push(e.code) });
   await tick();
   client.failSnapshots({ code: 'permission-denied' });
-  assert.deepEqual(errs, ['permission-denied', 'permission-denied']);
+  assert.deepEqual(errs, ['permission-denied', 'permission-denied', 'permission-denied']);
 });
 
 // ---------- importing a device's old local data ----------
@@ -309,7 +309,7 @@ test('cloud store restart() listens again after a snapshot error', async () => {
   assert.equal(l.get().orders.length, 0);              // listener is dead, board is stale
   store.restart(); await tick();
   assert.equal(l.get().orders.length, 1);
-  assert.deepEqual(errs, ['resource-exhausted', 'resource-exhausted']);
+  assert.deepEqual(errs, ['resource-exhausted', 'resource-exhausted', 'resource-exhausted']);
 });
 
 test('imported orders get readable ids built from the device id and creation time (no hash collisions)', async () => {
@@ -317,4 +317,124 @@ test('imported orders get readable ids built from the device id and creation tim
   await A.store.importLegacy(legacyData()); await tick();
   const ids = [...server.data.keys()].filter(k => k.startsWith('orders/')).sort();
   assert.deepEqual(ids, ['orders/legacy-10-1000', 'orders/legacy-11-2000']);
+});
+
+
+// ---------- previous menu (history of every product ever added) ----------
+const onMenu = (snap, name) => snap.products.some(p => p.name === name);
+const inHistory = (snap, name) => snap.history.find(h => h.name === name);
+
+test('historyId is stable, case-insensitive and safe for document ids', () => {
+  assert.equal(Store.historyId('Chicken (3 nos)'), 'menu-chicken%20(3%20nos)');
+  assert.equal(Store.historyId('CROQUETTE'), Store.historyId('croquette'));
+  assert.ok(!Store.historyId('A/B').slice(5).includes('/'));
+});
+
+test('local store keeps every product in the previous menu with its latest price after it is removed', async () => {
+  const s = mk(); const l = last(); s.subscribe(l.cb);
+  const b = await s.upsertProduct({ name: 'Brownie', price: 60 });
+  await s.setProductPrice(b.id, 70);
+  await s.removeProduct(b.id);
+  assert.equal(onMenu(l.get(), 'Brownie'), false);
+  assert.equal(inHistory(l.get(), 'Brownie').price, 70);
+  assert.ok(inHistory(l.get(), 'Croquette'), 'products already on the menu are in the list too');
+});
+
+test('local restoreProduct keeps the saved price and colour when the colour is free, else picks a unique one', async () => {
+  const s = mk(); const l = last(); s.subscribe(l.cb);
+  const b = await s.upsertProduct({ name: 'Brownie', price: 60 });
+  await s.removeProduct(b.id);
+  const back = await s.restoreProduct(inHistory(l.get(), 'Brownie').id);          // nothing took its colour meanwhile
+  assert.equal(back.name, 'Brownie'); assert.equal(back.price, 60); assert.equal(back.c, b.c);
+  await s.removeProduct(back.id);
+  const cake = await s.upsertProduct({ name: 'Cake', price: 10 });                // takes the colour Brownie had
+  assert.equal(cake.c, b.c);
+  await s.restoreProduct(inHistory(l.get(), 'Brownie').id);
+  assert.equal(new Set(l.get().products.map(p => p.c)).size, l.get().products.length);
+  assert.equal(await s.restoreProduct(inHistory(l.get(), 'Brownie').id), null);   // already on the menu: nothing to do
+});
+
+test('local restoreAll restores only what is missing, and forgetHistory drops a removed entry', async () => {
+  const s = mk(); const l = last(); s.subscribe(l.cb);
+  for (const p of [...l.get().products]) await s.removeProduct(p.id);
+  assert.equal(l.get().products.length, 0);
+  assert.equal(await s.restoreAll(), 2);
+  assert.equal(l.get().products.length, 2);
+  assert.equal(await s.restoreAll(), 0);
+  const p = l.get().products[0];
+  await s.removeProduct(p.id);
+  await s.forgetHistory(inHistory(l.get(), p.name).id);
+  assert.equal(inHistory(l.get(), p.name), undefined);
+  await s.forgetHistory(inHistory(l.get(), l.get().products[0].name).id);   // on the menu: kept
+  assert.ok(inHistory(l.get(), l.get().products[0].name));
+});
+
+test('local store builds the previous menu for products saved before this feature existed', () => {
+  const s = mk({ 'biteflow.v1': JSON.stringify({ next: 1, orders: [], products: [{ id: 'p1', name: 'Old Item', price: 5, c: 2 }] }) });
+  const l = last(); s.subscribe(l.cb);
+  assert.deepEqual(l.get().history.map(h => [h.name, h.price, h.c]), [['Old Item', 5, 2]]);
+});
+
+test('cloud adding a product records it in the previous menu and removing it keeps the entry', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  const p = await A.store.upsertProduct({ name: 'Brownie', price: 60 }); await tick();
+  assert.deepEqual(server.get('meta/' + Store.historyId('Brownie')), { name: 'Brownie', price: 60, c: p.c });
+  await A.store.removeProduct(p.id); await tick();
+  assert.equal(onMenu(A.snap(), 'Brownie'), false);
+  assert.equal(inHistory(A.snap(), 'Brownie').price, 60);
+});
+
+test('cloud restoreProduct keeps the saved price and colour when the colour is free, else picks a unique one', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  const p = await A.store.upsertProduct({ name: 'Brownie', price: 60 }); await tick();
+  await A.store.removeProduct(p.id); await tick();
+  const back = await A.store.restoreProduct(inHistory(A.snap(), 'Brownie').id); await tick();
+  assert.equal(back.price, 60); assert.equal(back.c, p.c);
+  await A.store.removeProduct(back.id); await tick();
+  const cake = await A.store.upsertProduct({ name: 'Cake', price: 10 }); await tick();
+  assert.equal(cake.c, p.c);
+  await A.store.restoreProduct(inHistory(A.snap(), 'Brownie').id); await tick();
+  assert.equal(A.snap().products.length, 2);
+  assert.equal(new Set(A.snap().products.map(x => x.c)).size, 2);
+});
+
+test('cloud products saved before this feature are added to the previous menu once', async () => {
+  const server = createFakeServer();
+  server.data.set('products/a', { name: 'Alpha', price: 1, c: 0 });
+  server.data.set('products/b', { name: 'Beta', price: 2, c: 1 });
+  const A = cloud(server); await tick(10);
+  assert.deepEqual(A.snap().history.map(h => h.name).sort(), ['Alpha', 'Beta']);
+  const writes = server.log.filter(op => op.path.startsWith('meta/menu-')).length;
+  await tick(10);
+  assert.equal(server.log.filter(op => op.path.startsWith('meta/menu-')).length, writes);   // not rewritten on every snapshot
+  assert.equal(writes, 2);
+});
+
+test('cloud setProductPrice also updates the price in the previous menu', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  const p = await A.store.upsertProduct({ name: 'Brownie', price: 60 }); await tick();
+  await A.store.setProductPrice(p.id, 75); await tick();
+  assert.equal(inHistory(A.snap(), 'Brownie').price, 75);
+});
+
+test('cloud forgetHistory removes an entry that is off the menu but keeps one that is on it', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  const a = await A.store.upsertProduct({ name: 'Alpha', price: 1 });
+  const b = await A.store.upsertProduct({ name: 'Beta', price: 2 }); await tick();
+  await A.store.removeProduct(b.id); await tick();
+  await A.store.forgetHistory(inHistory(A.snap(), 'Beta').id);
+  await A.store.forgetHistory(inHistory(A.snap(), 'Alpha').id); await tick();
+  assert.equal(inHistory(A.snap(), 'Beta'), undefined);
+  assert.ok(inHistory(A.snap(), 'Alpha'));
+});
+
+test('cloud restoreAll restores only the products that are missing from the menu', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  const a = await A.store.upsertProduct({ name: 'Alpha', price: 1 });
+  const b = await A.store.upsertProduct({ name: 'Beta', price: 2 });
+  const c = await A.store.upsertProduct({ name: 'Gamma', price: 3 }); await tick();
+  await A.store.removeProduct(a.id); await A.store.removeProduct(c.id); await tick();
+  assert.equal(await A.store.restoreAll(), 2); await tick();
+  assert.deepEqual(A.snap().products.map(p => p.name).sort(), ['Alpha', 'Beta', 'Gamma']);
+  assert.equal(await A.store.restoreAll(), 0);
 });

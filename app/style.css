@@ -143,3 +143,15 @@ button.wide{width:100%;padding:11px 14px;font-size:15px}
 .login-info{margin:-4px 0 10px;color:var(--ready);font-size:13px;font-weight:600}
 .login-info:empty{display:none}
 .forgot{display:block;margin:10px auto 0!important;font-size:13px!important;text-decoration:underline}
+
+/* previous menu */
+.hist{margin:0 0 14px;padding-top:12px;border-top:1px dashed var(--line)}
+.hist-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.hist h4{margin:0;font-size:12px;font-weight:700;letter-spacing:.22em;text-transform:uppercase}
+.hist-note{margin:4px 0 8px;color:var(--muted);font-size:12px}
+#hlist{list-style:none;padding:0;margin:0;max-height:28vh;overflow:auto}
+#hlist li{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+#hlist .pn{flex:1;min-width:0;display:flex;align-items:center}
+#hlist .hp{color:var(--muted);font-weight:600;font-size:13px;white-space:nowrap}
+.icon-btn{width:32px;height:32px;padding:0;border-radius:50%;flex:none}
+#plist{max-height:32vh!important}

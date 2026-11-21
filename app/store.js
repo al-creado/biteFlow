@@ -10,6 +10,8 @@
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   const clone = v => JSON.parse(JSON.stringify(v));
   const lc = s => String(s).toLowerCase();
+  // Previous-menu entries are keyed by product name (case-insensitive). The key is a valid Firestore document id.
+  const historyId = name => 'menu-' + encodeURIComponent(lc(name));
 
   function assignColors(products) {
     const used = new Set(products.filter(p => Number.isInteger(p.c)).map(p => p.c));
@@ -46,8 +48,9 @@
         return { name: i.name, qty: Number(i.qty) || 1, price: typeof i.price === 'number' ? i.price : priceOf(i.name) };
       })
     }));
+    const history = (Array.isArray(r.history) ? r.history : []).filter(h => h && h.name).map(h => ({ id: historyId(h.name), name: h.name, price: Number(h.price) || 0, c: h.c }));
     const maxNum = orders.reduce((m, o) => Math.max(m, o.num), 0);
-    return { next: Number(r.next) || maxNum + 1, orders, products };
+    return { next: Number(r.next) || maxNum + 1, orders, products, history };
   }
 
   const cleanItems = items => items.map(i => ({ name: i.name, qty: Math.max(1, Number(i.qty) || 1), price: Number(i.price) || 0 }));
@@ -57,8 +60,23 @@
     try { const raw = storage.getItem(KEY); data = raw ? normalizeLegacy(JSON.parse(raw)) : null; } catch (e) { data = null; }
     if (!data) data = normalizeLegacy({ next: 1, orders: [], products: (seed || []).map(p => ({ ...p })) });
     const listeners = new Set();
-    const snapshot = () => ({ orders: clone(data.orders), products: clone(data.products), status: 'synced' });
+    // every product that has ever been on the menu stays in `history` (the "previous menu")
+    const touchHistory = p => {
+      const id = historyId(p.name);
+      let h = data.history.find(x => x.id === id);
+      if (!h) { h = { id }; data.history.push(h); }
+      h.name = p.name; h.price = p.price; h.c = p.c;
+    };
+    const onMenu = name => data.products.some(p => lc(p.name) === lc(name));
+    const colourFree = c => Number.isInteger(c) && !data.products.some(p => p.c === c);
+    const bringBack = h => {
+      const p = { id: uid(), name: h.name, price: h.price || 0, c: colourFree(h.c) ? h.c : undefined };
+      data.products.push(p); assignColors(data.products); return p;
+    };
+    data.products.forEach(touchHistory);
+    const snapshot = () => ({ orders: clone(data.orders), products: clone(data.products), history: clone(data.history), status: 'synced' });
     const commit = () => {
+      data.products.forEach(touchHistory);
       try { storage.setItem(KEY, JSON.stringify(data)); } catch (e) {}
       listeners.forEach(cb => cb(snapshot()));
     };
@@ -97,6 +115,22 @@
         });
         assignColors(data.products); commit();
       },
+      async restoreProduct(id) {
+        const h = data.history.find(x => x.id === id);
+        if (!h || onMenu(h.name)) return null;
+        const p = bringBack(h); commit(); return clone(p);
+      },
+      async restoreAll() {
+        const missing = data.history.filter(h => !onMenu(h.name));
+        missing.forEach(bringBack);
+        if (missing.length) commit();
+        return missing.length;
+      },
+      async forgetHistory(id) {
+        const h = data.history.find(x => x.id === id);
+        if (!h || onMenu(h.name)) return;
+        data.history = data.history.filter(x => x.id !== id); commit();
+      },
       async importLegacy() { return { orders: 0, products: 0 }; }
     };
     return store;
@@ -110,8 +144,8 @@
   const BATCH_LIMIT = 500;
 
   function createCloudStore({ fb, db, onError }) {
-    const orders = new Map(), products = new Map();
-    const flags = { orders: null, products: null };   // metadata of the latest snapshot of each collection
+    const orders = new Map(), products = new Map(), history = new Map();
+    const flags = { orders: null, products: null, meta: null };   // metadata of the latest snapshot of each collection
     const listeners = new Set();
     let status = 'syncing';
     const unsubs = [];
@@ -124,7 +158,7 @@
     const highest = () => { let m = 0; orders.forEach(o => { if (o.num > m) m = o.num; }); return m; };
 
     function computeStatus() {
-      const f = [flags.orders, flags.products].filter(Boolean);
+      const f = [flags.orders, flags.products, flags.meta].filter(Boolean);
       if (f.some(m => m.fromCache)) return 'offline';
       if (f.some(m => m.hasPendingWrites)) return 'syncing';
       return 'synced';
@@ -133,12 +167,14 @@
       return {
         orders: clone([...orders.values()].sort((a, b) => a.num - b.num)),
         products: clone([...products.values()]),
+        history: clone([...history.values()]),
         status
       };
     }
     function emit() {
-      if (!flags.orders || !flags.products) return;   // wait for the first data from both collections
+      if (!flags.orders || !flags.products || !flags.meta) return;   // wait for the first data from every collection
       status = computeStatus();
+      backfillHistory();
       const snap = snapshot();
       listeners.forEach(cb => cb(snap));
       if (status === 'synced' && [...orders.values()].some(o => o.provisional)) assignNumbers();
@@ -147,10 +183,27 @@
       map.clear();
       snap.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
     }
+    // The previous menu lives in the `meta` collection as `menu-<name>` documents (already allowed by the rules).
+    const histRef = name => fb.doc(db, 'meta', historyId(name));
+    const histDoc = p => ({ name: p.name, price: Number(p.price) || 0, ...(Number.isInteger(p.c) ? { c: p.c } : {}) });
+    const writeHistory = p => quiet(fb.setDoc(histRef(p.name), histDoc(p)));
+    const backfilled = new Set();       // ids already written by the backfill, so it never loops on slow snapshots
+    function backfillHistory() {
+      products.forEach(p => {
+        const id = historyId(p.name);
+        if (history.has(id) || backfilled.has(id)) return;
+        backfilled.add(id); writeHistory(p);
+      });
+    }
     const listenOpts = { includeMetadataChanges: true };   // without this the SDK never reports offline/synced changes
     const attach = () => {
       unsubs.push(fb.onSnapshot(ordersCol(), listenOpts, snap => { load(orders, snap); flags.orders = snap.metadata; emit(); }, err => onError && onError(err)));
       unsubs.push(fb.onSnapshot(fb.collection(db, 'products'), listenOpts, snap => { load(products, snap); flags.products = snap.metadata; emit(); }, err => onError && onError(err)));
+      unsubs.push(fb.onSnapshot(fb.collection(db, 'meta'), listenOpts, snap => {
+        history.clear();
+        snap.docs.forEach(d => { if (d.id.startsWith('menu-')) history.set(d.id, { id: d.id, ...d.data() }); });
+        flags.meta = snap.metadata; emit();
+      }, err => onError && onError(err)));
     };
     attach();
 
@@ -192,11 +245,11 @@
       kind: 'cloud',
       subscribe(cb) {
         listeners.add(cb);
-        if (flags.orders && flags.products) cb(snapshot());
+        if (flags.orders && flags.products && flags.meta) cb(snapshot());
         return () => listeners.delete(cb);
       },
       destroy() { unsubs.forEach(u => u()); unsubs.length = 0; listeners.clear(); },
-      restart() { unsubs.forEach(u => u()); unsubs.length = 0; flags.orders = flags.products = null; attach(); },
+      restart() { unsubs.forEach(u => u()); unsubs.length = 0; flags.orders = flags.products = flags.meta = null; backfilled.clear(); attach(); },
 
       async addOrder({ name, items, notes }) {
         const id = uid();
@@ -223,13 +276,42 @@
       },
       async upsertProduct({ name, price }) {
         const p = Number(price) || 0, ex = findProduct(name);
-        if (ex) { quiet(fb.updateDoc(productRef(ex.id), { price: p })); return { ...ex, price: p }; }
+        if (ex) { quiet(fb.updateDoc(productRef(ex.id), { price: p })); writeHistory({ ...ex, price: p }); return { ...ex, price: p }; }
         const prod = { id: uid(), name, price: p, c: nextColor(name) };
+        quiet(fb.setDoc(productRef(prod.id), { name: prod.name, price: prod.price, c: prod.c }));
+        writeHistory(prod);
+        return prod;
+      },
+      async setProductPrice(id, price) {
+        const p = Math.max(0, Number(price) || 0), ex = products.get(id);
+        quiet(fb.updateDoc(productRef(id), { price: p }));
+        if (ex) writeHistory({ ...ex, price: p });
+      },
+      async removeProduct(id) { quiet(fb.deleteDoc(productRef(id))); },
+      async restoreProduct(id) {
+        const h = history.get(id);
+        if (!h || findProduct(h.name)) return null;
+        const free = Number.isInteger(h.c) && ![...products.values()].some(p => p.c === h.c);
+        const prod = { id: uid(), name: h.name, price: h.price || 0, c: free ? h.c : nextColor(h.name) };
         quiet(fb.setDoc(productRef(prod.id), { name: prod.name, price: prod.price, c: prod.c }));
         return prod;
       },
-      async setProductPrice(id, price) { quiet(fb.updateDoc(productRef(id), { price: Math.max(0, Number(price) || 0) })); },
-      async removeProduct(id) { quiet(fb.deleteDoc(productRef(id))); },
+      async restoreAll() {
+        const known = [...products.values()].map(p => ({ ...p }));
+        let n = 0;
+        for (const h of history.values()) {
+          if (known.some(p => lc(p.name) === lc(h.name))) continue;
+          const prod = { id: uid(), name: h.name, price: h.price || 0, c: Number.isInteger(h.c) && !known.some(p => p.c === h.c) ? h.c : undefined };
+          known.push(prod); assignColors(known); n++;
+          quiet(fb.setDoc(productRef(prod.id), { name: prod.name, price: prod.price, c: prod.c }));
+        }
+        return n;
+      },
+      async forgetHistory(id) {
+        const h = history.get(id);
+        if (!h || findProduct(h.name)) return;
+        quiet(fb.deleteDoc(fb.doc(db, 'meta', id)));
+      },
       async seedProducts(list) {
         const known = [...products.values()].map(p => ({ ...p }));
         for (const s of list) {
@@ -274,5 +356,5 @@
     };
   }
 
-  return { KEY, PALETTE_SIZE, uid, clone, cleanItems, assignColors, normalizeLegacy, createLocalStore, createCloudStore };
+  return { KEY, PALETTE_SIZE, historyId, uid, clone, cleanItems, assignColors, normalizeLegacy, createLocalStore, createCloudStore };
 });
