@@ -8,7 +8,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
 <section id="login" class="login" hidden data-state="form">
@@ -37,12 +37,23 @@
     </div>
     <div class="hbtns">
       <button id="syncPill" class="pill" data-state="local" aria-label="Account and sync status"><i class="pdot"></i><span class="pill-t">Local only</span></button>
-      <button id="prodBtn" aria-label="Products"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg> <span class="lbl">Products</span></button>
       <button id="exportBtn" aria-label="Export to Excel"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg> <span class="lbl">Export to Excel</span></button>
       <button id="newBtn" class="primary"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> New order</button>
     </div>
   </div>
 </header>
+<section class="weekbar" id="weekbar">
+  <button id="wkPrev" class="wk-arrow" aria-label="Earlier weekend"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+  <button id="wkTitle" class="wk-title" aria-haspopup="listbox" aria-expanded="false"><small id="wkSmall">This weekend</small><b><span id="wkDate">&nbsp;</span><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></b></button>
+  <button id="wkNext" class="wk-arrow" aria-label="Later weekend"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+  <span id="wkChip" class="chip"></span>
+  <span class="wk-sp"></span>
+  <div class="stat"><small>Orders</small><b id="wkOrders">0</b></div>
+  <div class="stat"><small>Total</small><b id="wkTotal">&#8377;0</b></div>
+  <button id="prodBtn"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg> <span class="lbl-long">Menu for this weekend</span><span class="lbl-short">Menu</span></button>
+  <div id="wkPop" class="pop" role="listbox" hidden></div>
+</section>
+<div class="menubar" id="menuBar"><span class="lbl2" id="menuLbl">This weekend's menu</span><span id="menuChips" class="mchips"></span></div>
 <main>
   <section class="col" data-status="new"><h2>New <span class="count"></span></h2><div class="list"></div></section>
   <section class="col" data-status="ready"><h2>Ready <span class="count"></span></h2><div class="list"></div></section>
@@ -53,8 +64,9 @@
 <dialog id="dlg">
   <form method="dialog" id="form">
     <h3 id="dlgTitle">New order</h3>
+    <p class="sub" id="dlgWeek"></p>
     <label>Customer name <input id="fName" placeholder="e.g. Priya" autocomplete="off" autocapitalize="words"></label>
-    <div class="lbl">Items</div><div id="lines"></div><div id="noProd" class="hint" hidden>No products yet. Close this and add some under Products.</div><button type="button" id="addLine" class="addline"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add item</button>
+    <div class="lbl">Items</div><div id="lines"></div><div id="noProd" class="hint" hidden>This weekend has no menu yet. Close this and tap Menu for this weekend to add items.</div><button type="button" id="addLine" class="addline"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add item</button>
     <div class="total"><span>Total</span><b id="dtotal"></b></div>
     <label>Notes <input id="fNotes" placeholder="e.g. pickup Sunday 11am" autocomplete="off"></label>
     <div class="actions">
@@ -78,7 +90,9 @@
   <div class="actions"><button type="button" id="signOutBtn" class="danger" hidden>Sign out</button><span class="spacer"></span><button type="button" id="aClose">Close</button></div>
 </dialog>
 <dialog id="pdlg">
-  <h3>Products</h3>
+  <h3 id="pTitle">Menu</h3>
+  <p class="sub">Only these items show up when you take an order for this weekend.</p>
+  <button type="button" id="copyMenu" class="wide copy" hidden></button>
   <form id="pform" class="padd"><input id="pName" placeholder="New product" autocomplete="off"><input id="pPrice" type="number" min="0" step="any" placeholder="Price" aria-label="Price"><button class="primary">Add</button></form>
   <ul id="plist"></ul>
   <section id="histWrap" class="hist" hidden>
@@ -88,10 +102,10 @@
   </section>
   <div class="actions"><span class="spacer"></span><button type="button" id="pClose">Done</button></div>
 </dialog>
-<script src="firebase-config.js?v=19"></script>
-<script src="vendor/firebase.js?v=19"></script>
-<script src="store.js?v=19"></script>
-<script src="auth.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="firebase-config.js?v=22"></script>
+<script src="vendor/firebase.js?v=22"></script>
+<script src="store.js?v=22"></script>
+<script src="auth.js?v=22"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

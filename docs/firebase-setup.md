@@ -47,6 +47,8 @@ asked once whether to upload them; choose **Upload**. Your old copy stays on the
    the order appears on the other device and the pill returns to **Synced**.
 
 ## Limits and notes
+- Orders, menus and numbers are kept per weekend. Old orders are placed into the weekend of their date, and an
+  existing menu becomes the menu of the current weekend. Past weekends stay available (nothing is deleted).
 - Free (Spark) plan: 50,000 reads and 20,000 writes per day, 1 GiB stored. Plenty for this business.
   Every fresh install re-reads all orders; use **Clear** to remove delivered orders you no longer need.
 - An order added while a device is offline shows a provisional number straight away. When the device is

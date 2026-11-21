@@ -7,7 +7,9 @@ const memStorage = (init) => {
   return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), _m: m };
 };
 const SEED = [{ name: 'Croquette', price: 100 }, { name: 'Sandwich', price: 75 }];
-const mk = (init) => Store.createLocalStore({ storage: memStorage(init), seed: SEED });
+const FIXED = new Date(2026, 10, 21, 12, 0).getTime();      // Saturday 21 Nov 2026
+const WEEK = '2026-11-22', PREV = '2026-11-15', NEXT = '2026-11-29';
+const mk = (init, now = FIXED) => Store.createLocalStore({ storage: memStorage(init), seed: SEED, now: () => now });
 const last = () => { let s; return { cb: x => { s = x; }, get: () => s }; };
 
 test('normalizeLegacy converts string items and completed status', () => {
@@ -63,9 +65,9 @@ test('local store upsertProduct matches name case-insensitively and updates pric
 
 test('local store persists to storage and reloads', async () => {
   const storage = memStorage();
-  const s1 = Store.createLocalStore({ storage, seed: SEED });
+  const s1 = Store.createLocalStore({ storage, seed: SEED, now: () => FIXED });
   await s1.addOrder({ name: 'A', items: [{ name: 'Croquette', qty: 1, price: 100 }], notes: '' });
-  const s2 = Store.createLocalStore({ storage, seed: SEED }); const l = last(); s2.subscribe(l.cb);
+  const s2 = Store.createLocalStore({ storage, seed: SEED, now: () => FIXED }); const l = last(); s2.subscribe(l.cb);
   assert.equal(l.get().orders.length, 1);
   assert.equal(l.get().products.length, 2);
   const o2 = await s2.addOrder({ name: 'B', items: [{ name: 'Sandwich', qty: 1, price: 75 }], notes: '' });
@@ -88,7 +90,7 @@ const { createFakeServer } = require('./helpers/fake-fb.js');
 const tick = async (n = 4) => { for (let i = 0; i < n; i++) await new Promise(r => setTimeout(r, 0)); };
 const cloud = (server, opts) => {
   const client = server.createClient(opts);
-  const store = Store.createCloudStore({ fb: client.fb, db: client.db });
+  const store = Store.createCloudStore({ fb: client.fb, db: client.db, now: () => (opts && opts.now) || FIXED });
   const l = last(); store.subscribe(l.cb);
   return { client, store, snap: l.get };
 };
@@ -105,7 +107,7 @@ test('cloud addOrder from two stores gets distinct numbers', async () => {
   await tick(10);
   assert.deepEqual(A.snap().orders.map(o => o.num), [1, 2]);
   assert.ok(A.snap().orders.every(o => !o.provisional));
-  assert.equal(server.get('meta/counter').next, 3);
+  assert.equal(server.get('meta/counter-' + WEEK).next, 3);
   assert.ok(a.id !== b.id);
 });
 
@@ -155,15 +157,15 @@ test('cloud counter catches up after reconnect (next >= highest number + 1)', as
   await A.store.addOrder({ name: 'off2', items: [item()], notes: '' });
   A.client.setOnline(true); await tick(8);
   assert.equal(server.count('orders'), 3);
-  assert.ok(server.get('meta/counter').next >= 4, 'counter was ' + JSON.stringify(server.get('meta/counter')));
+  assert.ok(server.get('meta/counter-' + WEEK).next >= 4, 'counter was ' + JSON.stringify(server.get('meta/counter-' + WEEK)));
   const nxt = await A.store.addOrder({ name: 'after', items: [item()], notes: '' }); await tick(10);
   assert.equal(A.snap().orders.find(x => x.name === 'after').num, 4);
 });
 
 test('cloud clearDelivered with 1200 delivered orders deletes all of them', async () => {
   const server = createFakeServer();
-  for (let i = 1; i <= 1200; i++) server.data.set('orders/d' + i, { num: i, status: 'delivered', created: i, name: '', notes: '', items: [] });
-  for (let i = 0; i < 3; i++) server.data.set('orders/n' + i, { num: 2000 + i, status: 'new', created: 1, name: '', notes: '', items: [] });
+  for (let i = 1; i <= 1200; i++) server.data.set('orders/d' + i, { num: i, status: 'delivered', created: FIXED, name: '', notes: '', items: [] });
+  for (let i = 0; i < 3; i++) server.data.set('orders/n' + i, { num: 2000 + i, status: 'new', created: FIXED, name: '', notes: '', items: [] });
   const A = cloud(server); await tick();
   assert.equal(A.snap().orders.length, 1203);
   await A.store.clearDelivered(); await tick(8);
@@ -212,7 +214,7 @@ test('cloud products get distinct colours and case-insensitive upsert', async ()
 
 test('cloud store reports snapshot errors through onError', async () => {
   const server = createFakeServer(); const client = server.createClient(); const errs = [];
-  Store.createCloudStore({ fb: client.fb, db: client.db, onError: e => errs.push(e.code) });
+  Store.createCloudStore({ fb: client.fb, db: client.db, now: () => FIXED, onError: e => errs.push(e.code) });
   await tick();
   client.failSnapshots({ code: 'permission-denied' });
   assert.deepEqual(errs, ['permission-denied', 'permission-denied', 'permission-denied']);
@@ -223,8 +225,8 @@ const legacyData = () => Store.normalizeLegacy({
   next: 6,
   products: [{ name: 'Croquette', price: 100 }, { name: 'sandwich', price: 75 }],
   orders: [
-    { id: 11, num: 4, status: 'ready', created: 2000, name: 'B', notes: '', items: [{ name: 'Croquette', qty: 2, price: 100 }] },
-    { id: 10, num: 3, status: 'new', created: 1000, name: 'A', notes: 'x', items: [{ name: 'sandwich', qty: 1, price: 75 }] }
+    { id: 11, num: 4, status: 'ready', created: FIXED - 1000, name: 'B', notes: '', items: [{ name: 'Croquette', qty: 2, price: 100 }] },
+    { id: 10, num: 3, status: 'new', created: FIXED - 2000, name: 'A', notes: 'x', items: [{ name: 'sandwich', qty: 1, price: 75 }] }
   ]
 });
 
@@ -233,7 +235,7 @@ test('import into an empty cloud keeps legacy order numbers and sets the counter
   const r = await A.store.importLegacy(legacyData()); await tick();
   assert.deepEqual(r, { orders: 2, products: 2 });
   assert.deepEqual(A.snap().orders.map(o => o.num), [3, 4]);
-  assert.ok(server.get('meta/counter').next >= 5);
+  assert.ok(server.get('meta/counter-' + WEEK).next >= 5);
   const next = await A.store.addOrder({ name: 'new', items: [item()], notes: '' });
   assert.equal(next.num, 5);
 });
@@ -245,7 +247,7 @@ test('import into a cloud that already has orders renumbers the imported ones fr
   await A.store.importLegacy(legacyData()); await tick();
   const byName = Object.fromEntries(A.snap().orders.map(o => [o.name, o.num]));
   assert.deepEqual([byName.existing, byName.existing2, byName.A, byName.B], [1, 2, 3, 4]);
-  assert.ok(server.get('meta/counter').next >= 5);
+  assert.ok(server.get('meta/counter-' + WEEK).next >= 5);
 });
 
 test('import merges products by name case-insensitively without duplicates', async () => {
@@ -287,7 +289,7 @@ test('an order numbered offline is renumbered after reconnect when another devic
   const nums = A.snap().orders.map(o => o.num).sort();
   assert.deepEqual(nums, [1, 2, 3]);
   assert.ok(A.snap().orders.every(o => !o.provisional));
-  assert.ok(server.get('meta/counter').next >= 4);
+  assert.ok(server.get('meta/counter-' + WEEK).next >= 4);
 });
 
 test('cloud store status follows connectivity even when no document changes (needs metadata events)', async () => {
@@ -302,10 +304,10 @@ test('cloud store status follows connectivity even when no document changes (nee
 
 test('cloud store restart() listens again after a snapshot error', async () => {
   const server = createFakeServer(); const client = server.createClient(); const errs = [];
-  const store = Store.createCloudStore({ fb: client.fb, db: client.db, onError: e => errs.push(e.code) });
+  const store = Store.createCloudStore({ fb: client.fb, db: client.db, now: () => FIXED, onError: e => errs.push(e.code) });
   const l = last(); store.subscribe(l.cb); await tick();
   client.failSnapshots({ code: 'resource-exhausted' });
-  server.data.set('orders/z', { num: 1, status: 'new', created: 1, name: 'late', notes: '', items: [] }); server.notify(); await tick();
+  server.data.set('orders/z', { num: 1, status: 'new', created: FIXED, name: 'late', notes: '', items: [] }); server.notify(); await tick();
   assert.equal(l.get().orders.length, 0);              // listener is dead, board is stale
   store.restart(); await tick();
   assert.equal(l.get().orders.length, 1);
@@ -316,7 +318,7 @@ test('imported orders get readable ids built from the device id and creation tim
   const server = createFakeServer(); const A = cloud(server); await tick();
   await A.store.importLegacy(legacyData()); await tick();
   const ids = [...server.data.keys()].filter(k => k.startsWith('orders/')).sort();
-  assert.deepEqual(ids, ['orders/legacy-10-1000', 'orders/legacy-11-2000']);
+  assert.deepEqual(ids, ['orders/legacy-10-' + (FIXED - 2000), 'orders/legacy-11-' + (FIXED - 1000)]);
 });
 
 
@@ -437,4 +439,150 @@ test('cloud restoreAll restores only the products that are missing from the menu
   assert.equal(await A.store.restoreAll(), 2); await tick();
   assert.deepEqual(A.snap().products.map(p => p.name).sort(), ['Alpha', 'Beta', 'Gamma']);
   assert.equal(await A.store.restoreAll(), 0);
+});
+
+
+// ---------- weekends ----------
+const sat = (y, m, d, h = 12, min = 0) => new Date(y, m - 1, d, h, min).getTime();
+
+test('weekKeyOf puts every day of Mon-Sun into the weekend that ends on Sunday', () => {
+  assert.equal(Store.weekKeyOf(sat(2026, 11, 21)), WEEK);            // Saturday
+  assert.equal(Store.weekKeyOf(sat(2026, 11, 22, 23, 30)), WEEK);    // Sunday night is still that Sunday
+  assert.equal(Store.weekKeyOf(sat(2026, 11, 23, 0, 5)), NEXT);      // Monday just after midnight starts the next weekend
+  assert.equal(Store.weekKeyOf(sat(2026, 11, 16)), WEEK);            // Monday of the same week
+  assert.equal(Store.weekKeyOf(sat(2026, 12, 31)), '2027-01-03');    // crosses the year
+});
+
+test('addWeeks and weekLabel work on weekend keys', () => {
+  assert.equal(Store.addWeeks(WEEK, -1), PREV);
+  assert.equal(Store.addWeeks(WEEK, 1), NEXT);
+  assert.equal(Store.addWeeks('2026-12-27', 1), '2027-01-03');
+  assert.equal(Store.weekLabel(WEEK), 'Sun 22 Nov');
+});
+
+test('local store: orders belong to the selected weekend and numbers restart each weekend', async () => {
+  const s = mk(); const l = last(); s.subscribe(l.cb);
+  assert.equal(l.get().week, WEEK); assert.equal(l.get().currentWeek, WEEK);
+  const a = await s.addOrder({ name: 'A', items: [item()], notes: '' });
+  const b = await s.addOrder({ name: 'B', items: [item()], notes: '' });
+  assert.deepEqual([a.num, b.num], [1, 2]); assert.equal(a.week, WEEK);
+  s.setWeek(NEXT);
+  assert.equal(l.get().week, NEXT); assert.equal(l.get().orders.length, 0);
+  const c = await s.addOrder({ name: 'C', items: [item()], notes: '' });
+  assert.equal(c.num, 1); assert.equal(c.week, NEXT);
+  s.setWeek(WEEK);
+  assert.deepEqual(l.get().orders.map(o => o.name), ['A', 'B']);
+});
+
+test('local store: every weekend has its own menu, and the weekends list summarises orders and totals', async () => {
+  const s = mk(); const l = last(); s.subscribe(l.cb);
+  await s.addOrder({ name: 'A', items: [item('Croquette', 2, 100)], notes: '' });
+  s.setWeek(NEXT);
+  assert.deepEqual(l.get().products, []);                               // nothing on next weekend's menu yet
+  await s.upsertProduct({ name: 'Brownie', price: 60 });
+  assert.deepEqual(l.get().products.map(p => p.name), ['Brownie']);
+  s.setWeek(WEEK);
+  assert.deepEqual(l.get().products.map(p => p.name).sort(), ['Croquette', 'Sandwich']);
+  const w = Object.fromEntries(l.get().weeks.map(x => [x.key, x]));
+  assert.deepEqual([w[WEEK].orders, w[WEEK].total], [1, 200]);
+  assert.deepEqual(l.get().weeks.map(x => x.key), [NEXT, WEEK]);        // newest first
+});
+
+test('local store: copyPreviousMenu copies the latest earlier menu once, keeping price and colour', async () => {
+  const s = mk(); const l = last(); s.subscribe(l.cb);
+  const before = l.get().products.map(p => [p.name, p.price, p.c]).sort();
+  s.setWeek(NEXT);
+  assert.equal(l.get().prevMenu.week, WEEK);
+  assert.equal(await s.copyPreviousMenu(), 2);
+  assert.deepEqual(l.get().products.map(p => [p.name, p.price, p.c]).sort(), before);
+  assert.equal(await s.copyPreviousMenu(), 0);
+  assert.equal(l.get().products.every(p => p.week === NEXT), true);
+});
+
+test('local store: data saved before weekends are placed by order date, and the old menu becomes this weekend\'s menu', () => {
+  const old = { next: 9, products: [{ id: 'p1', name: 'Old Item', price: 5, c: 2 }],
+    orders: [{ id: 1, num: 3, status: 'delivered', created: sat(2026, 11, 10), name: 'Past', notes: '', items: [{ name: 'Old Item', qty: 1, price: 5 }] },
+             { id: 2, num: 4, status: 'new', created: sat(2026, 11, 19), name: 'Now', notes: '', items: [{ name: 'Old Item', qty: 2, price: 5 }] }] };
+  const s = mk({ 'biteflow.v1': JSON.stringify(old) }); const l = last(); s.subscribe(l.cb);
+  assert.deepEqual(l.get().orders.map(o => o.name), ['Now']);
+  assert.deepEqual(l.get().products.map(p => p.name), ['Old Item']);
+  s.setWeek('2026-11-15');
+  assert.deepEqual(l.get().orders.map(o => o.name), ['Past']);
+  assert.equal(l.get().orders[0].num, 3);                                // old numbers are kept
+});
+
+test('local store: a product removed from this weekend stays in the previous menu and can be added to any weekend', async () => {
+  const s = mk(); const l = last(); s.subscribe(l.cb);
+  const c = l.get().products.find(p => p.name === 'Croquette');
+  await s.removeProduct(c.id);
+  s.setWeek(NEXT);
+  assert.ok(l.get().history.find(h => h.name === 'Croquette'));
+  await s.restoreProduct(l.get().history.find(h => h.name === 'Croquette').id);
+  assert.deepEqual(l.get().products.map(p => [p.name, p.week]), [['Croquette', NEXT]]);
+});
+
+test('cloud: order numbers restart for each weekend and each weekend has its own counter', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  await A.store.addOrder({ name: 'a1', items: [item()], notes: '' });
+  await A.store.addOrder({ name: 'a2', items: [item()], notes: '' }); await tick(10);
+  A.store.setWeek(NEXT); await tick();
+  const n1 = await A.store.addOrder({ name: 'n1', items: [item()], notes: '' }); await tick(10);
+  assert.equal(n1.num, 1); assert.equal(n1.week, NEXT);
+  assert.equal(server.get('meta/counter-' + WEEK).next, 3);
+  assert.equal(server.get('meta/counter-' + NEXT).next, 2);
+  A.store.setWeek(WEEK); await tick();
+  assert.deepEqual(A.snap().orders.map(o => o.num), [1, 2]);
+});
+
+test('cloud: two devices adding to the same weekend still get different numbers', async () => {
+  const server = createFakeServer(); const A = cloud(server), B = cloud(server); await tick();
+  await Promise.all([A.store.addOrder({ name: 'A', items: [item()], notes: '' }), B.store.addOrder({ name: 'B', items: [item()], notes: '' })]);
+  await tick(12);
+  assert.deepEqual(A.snap().orders.map(o => o.num), [1, 2]);
+  assert.ok(A.snap().orders.every(o => !o.provisional && o.week === WEEK));
+});
+
+test('cloud: orders without a weekend (saved before this feature) are placed by date and numbering continues in that weekend', async () => {
+  const server = createFakeServer();
+  server.data.set('orders/o1', { num: 7, status: 'delivered', created: sat(2026, 11, 10), name: 'Past', notes: '', items: [] });
+  server.data.set('orders/o2', { num: 8, status: 'new', created: sat(2026, 11, 19), name: 'Now', notes: '', items: [] });
+  const A = cloud(server); await tick();
+  assert.deepEqual(A.snap().orders.map(o => o.name), ['Now']);
+  const o = await A.store.addOrder({ name: 'next', items: [item()], notes: '' }); await tick(10);
+  assert.equal(A.snap().orders.find(x => x.name === 'next').num, 9);
+  A.store.setWeek('2026-11-15'); await tick();
+  assert.deepEqual(A.snap().orders.map(x => x.num), [7]);
+});
+
+test('cloud: products saved before weekends move into this weekend\'s menu once, and later weekends start empty', async () => {
+  const server = createFakeServer();
+  server.data.set('products/a', { name: 'Alpha', price: 1, c: 0 });
+  server.data.set('products/b', { name: 'Beta', price: 2, c: 1 });
+  const A = cloud(server); await tick(10);
+  assert.deepEqual(A.snap().products.map(p => p.name).sort(), ['Alpha', 'Beta']);
+  assert.equal(server.get('products/a').week, WEEK);
+  A.store.setWeek(NEXT); await tick();
+  assert.deepEqual(A.snap().products, []);
+  assert.deepEqual(A.snap().history.map(h => h.name).sort(), ['Alpha', 'Beta']);
+});
+
+test('cloud: copyPreviousMenu fills a new weekend from the latest earlier menu', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  const a = await A.store.upsertProduct({ name: 'Alpha', price: 10 });
+  await A.store.upsertProduct({ name: 'Beta', price: 20 }); await tick();
+  A.store.setWeek(NEXT); await tick();
+  assert.equal(A.snap().prevMenu.week, WEEK);
+  assert.equal(await A.store.copyPreviousMenu(), 2); await tick();
+  assert.deepEqual(A.snap().products.map(p => [p.name, p.price, p.week]).sort(), [['Alpha', 10, NEXT], ['Beta', 20, NEXT]]);
+  assert.equal(A.snap().products.find(p => p.name === 'Alpha').c, a.c);
+  assert.equal(await A.store.copyPreviousMenu(), 0);
+});
+
+test('cloud: a number picked offline uses the highest number of that weekend', async () => {
+  const server = createFakeServer(); const A = cloud(server); await tick();
+  await A.store.addOrder({ name: '1', items: [item()], notes: '' }); await tick(10);
+  A.store.setWeek(NEXT); await tick();
+  A.client.setOnline(false); await tick();
+  const o = await A.store.addOrder({ name: 'offline next weekend', items: [item()], notes: '' });
+  assert.equal(o.num, 1);                                                  // not 2: it belongs to the other weekend
 });

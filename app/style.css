@@ -155,3 +155,50 @@ button.wide{width:100%;padding:11px 14px;font-size:15px}
 #hlist .hp{color:var(--muted);font-weight:600;font-size:13px;white-space:nowrap}
 .icon-btn{width:32px;height:32px;padding:0;border-radius:50%;flex:none}
 #plist{max-height:32vh!important}
+
+/* weekend bar */
+.weekbar{position:relative;margin:14px 18px 0;background:var(--cream);border-radius:22px;padding:12px 16px;display:flex;align-items:center;gap:10px 12px;flex-wrap:wrap}
+.wk-arrow{width:36px;height:36px;padding:0;border-radius:50%;flex:none}
+.wk-arrow:disabled{opacity:.35;cursor:default}
+.wk-title{flex-direction:column;align-items:flex-start;justify-content:center;gap:0;line-height:1.15;background:none;border:0;border-radius:12px;padding:4px 8px;text-align:left}
+.wk-title small{font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+.wk-title b{font-size:20px;display:flex;align-items:center;gap:6px}
+.wk-sp{flex:1}
+.stat{display:flex;flex-direction:column;align-items:flex-start;padding:0 8px}
+.stat small{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.stat b{font-size:18px;color:var(--action)}
+.chip{font-size:12px;font-weight:700;border-radius:999px;padding:6px 12px;background:#E3F3C2;color:#3c5a08}
+.chip[data-kind=ahead]{background:#E5DBFF;color:#4b2f96}
+.chip[data-kind=past]{background:#ECE3E6;color:#6b5560}
+.lbl-short{display:none}
+.menubar{margin:10px 18px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.menubar .lbl2{font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase}
+.mchips{display:contents}
+.mchip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;background:var(--bg);border-left:5px solid var(--ac);border-radius:10px;padding:6px 10px}
+.mchip b{color:var(--text)}
+.mnone{color:var(--muted);font-size:13px}
+.pop{position:absolute;left:62px;top:calc(100% - 6px);z-index:30;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 12px 30px rgba(120,50,80,.25);width:min(380px,calc(100% - 24px));padding:8px;max-height:60vh;overflow:auto}
+.pop[hidden]{display:none}
+.pop .row2{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:none;border:0;text-align:left;font-weight:400}
+.pop .row2.cur{background:#FFE3EF}
+.pop .row2 b{display:block;font-size:15px}
+.pop .row2 small{color:var(--muted);font-weight:600;font-size:12px}
+.pop .row2 .r{text-align:right;color:var(--action);font-weight:700;font-size:14px;white-space:nowrap}
+.pop .foot{padding:8px 12px 4px;margin:0;color:var(--muted);font-size:12px}
+.sub{color:var(--muted);font-size:13px;margin:-6px 0 14px}
+.copy{margin-bottom:14px}
+.copy small{opacity:.75;font-weight:600}
+@media(max-width:800px){
+  .weekbar{margin:10px 10px 0;padding:10px 12px;gap:8px}
+  .wk-sp{display:none}
+  .stat{padding:0 6px}
+  #prodBtn .lbl-long{display:none}#prodBtn .lbl-short{display:inline}
+  #prodBtn{margin-left:auto}
+  .menubar{margin:8px 10px 0}
+  .pop{left:12px;width:calc(100% - 24px)}
+}
+/* the hidden attribute must always win over component display rules (buttons, flex rows) */
+[hidden]{display:none!important}
+@media(max-width:800px){
+  #prodBtn{width:100%;height:auto;padding:10px 14px;margin-left:0;flex:1 0 100%}
+}

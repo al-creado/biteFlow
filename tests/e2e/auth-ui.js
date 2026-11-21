@@ -78,9 +78,10 @@ const STUB = `(function(){ const module={exports:{}}; ${fake}
   t.srv.close();
 
   // 6. a device with old local data is offered an upload once, numbers kept, nothing duplicated
+  const NOW = Date.now();
   const LEGACY = JSON.stringify({ next: 6, products: [{ name: 'Croquette', price: 100 }],
-    orders: [{ id: 1, num: 4, status: 'ready', created: 2000, name: 'B', notes: '', items: [{ name: 'Croquette', qty: 2, price: 100 }] },
-             { id: 2, num: 3, status: 'new', created: 1000, name: 'A', notes: '', items: [{ name: 'Croquette', qty: 1, price: 100 }] }] });
+    orders: [{ id: 1, num: 4, status: 'ready', created: NOW - 1000, name: 'B', notes: '', items: [{ name: 'Croquette', qty: 2, price: 100 }] },
+             { id: 2, num: 3, status: 'new', created: NOW - 2000, name: 'A', notes: '', items: [{ name: 'Croquette', qty: 1, price: 100 }] }] });
   t = await open({ 'firebase-config.js': "window.FIREBASE_CONFIG = {apiKey:'k', projectId:'p'};", 'vendor/firebase.js': STUB },
     {});
   const q = t.p;

@@ -80,6 +80,11 @@ const { serve } = require('../helpers/serve.js');
   const csv = fs.readFileSync(await d.path(), 'utf8');
   assert.match(csv, /"Total"/); assert.match(csv, /,500,/);
 
+  // local-only mode has no account: the Sign out button must really be hidden (not just have the hidden attribute)
+  await p.click('#syncPill');
+  assert.equal(await p.locator('#signOutBtn').isVisible(), false);
+  await p.click('#aClose');
+
   assert.deepEqual(errs, []);
   await b.close(); srv.close();
   console.log('local-flow OK');

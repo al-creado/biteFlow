@@ -1,4 +1,4 @@
-const ICONS = {"list": "<path d=\"M8 6h13M8 12h13M8 18h13\"/><path d=\"M3 6h.01M3 12h.01M3 18h.01\"/>", "download": "<path d=\"M12 4v11\"/><path d=\"M7 11l5 5 5-5\"/><path d=\"M5 20h14\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "check": "<path d=\"M5 12.5l4.5 4.5L19 7\"/>", "minus": "<path d=\"M5 12h14\"/>", "x": "<path d=\"M6 6l12 12M18 6L6 18\"/>", "back": "<path d=\"M19 12H5\"/><path d=\"M11 6l-6 6 6 6\"/>", "chev": "<path d=\"M6 9l6 6 6-6\"/>", "edit": "<path d=\"M4 20h4L19 9l-4-4L4 16z\"/>"};
+const ICONS = {"list": "<path d=\"M8 6h13M8 12h13M8 18h13\"/><path d=\"M3 6h.01M3 12h.01M3 18h.01\"/>", "download": "<path d=\"M12 4v11\"/><path d=\"M7 11l5 5 5-5\"/><path d=\"M5 20h14\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "check": "<path d=\"M5 12.5l4.5 4.5L19 7\"/>", "minus": "<path d=\"M5 12h14\"/>", "x": "<path d=\"M6 6l12 12M18 6L6 18\"/>", "back": "<path d=\"M19 12H5\"/><path d=\"M11 6l-6 6 6 6\"/>", "chev": "<path d=\"M6 9l6 6 6-6\"/>", "edit": "<path d=\"M4 20h4L19 9l-4-4L4 16z\"/>", "cal": "<rect x=\"4\" y=\"5\" width=\"16\" height=\"15\" rx=\"2\"/><path d=\"M8 3v4M16 3v4M4 10h16\"/>"};
 const ic = n => `<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const SEED = [
   { name: 'Chicken Cheese Croquette (3 nos)', price: 100 },
@@ -10,12 +10,13 @@ const PALETTE = [
   ['#FFD6E8', '#C73B85'], ['#CFF1DD', '#26784A'], ['#D3E8FF', '#2B6CB0'], ['#FFF0B8', '#7A6100'],
   ['#E5DBFF', '#6B46C1'], ['#FFDCC7', '#A9440F'], ['#C9F0F0', '#0F766E'], ['#E3F3C2', '#4F6F0D']
 ];
-let state = { orders: [], products: [], history: [], status: 'synced' };
+const EMPTY = { orders: [], products: [], history: [], weeks: [], prevMenu: null, week: '', currentWeek: '', status: 'synced' };
+let state = { ...EMPTY };
 let store = null, unsubscribe = null;
 function setStore(next) {
   if (unsubscribe) unsubscribe();
   store = next; unsubscribe = null;
-  if (!next) { state = { orders: [], products: [], history: [], status: 'synced' }; render(); return; }
+  if (!next) { state = { ...EMPTY }; render(); return; }
   unsubscribe = next.subscribe(snap => {
     state = snap;
     Auth.setSyncStatus(snap.status, next.kind);
@@ -28,15 +29,17 @@ const $ = (s, r = document) => r.querySelector(s);
 const FLOW = ['new', 'ready', 'delivered'];
 const NEXT_LABEL = { new: 'Mark ready', ready: 'Delivered' };
 const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
-const colorOf = n => {
-  const p = state.products.find(x => x.name === n);
+const colorOf = (n, c) => {
+  if (Number.isInteger(c)) return PALETTE[c % PALETTE.length];
+  const p = state.products.find(x => x.name === n) || (state.history || []).find(x => x.name === n);
   if (p && Number.isInteger(p.c)) return PALETTE[p.c % PALETTE.length];
   let h = 0; for (const ch of String(n)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return PALETTE[h % PALETTE.length];
 };
-const colorStyle = n => { const [bg, ac] = colorOf(n); return `--bg:${bg};--ac:${ac}`; };
+const colorStyle = (n, c) => { const [bg, ac] = colorOf(n, c); return `--bg:${bg};--ac:${ac}`; };
+const menuColour = n => (state.products.find(p => p.name === n) || {}).c;
 const productPrice = n => (state.products.find(p => p.name === n) || {}).price || 0;
-const orderTotal = o => o.items.reduce((t, i) => t + i.qty * (i.price || 0), 0);
+const orderTotal = o => Store.orderTotal(o);
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function fmt(t) { return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 
@@ -60,7 +63,7 @@ function makeDropdown(options, value, onChange) {
   function paint() {
     label.textContent = current || 'Select product';
     label.classList.toggle('ph', !current);
-    list.innerHTML = options.length ? options.map((o, i) => `<li role="option" data-i="${i}" aria-selected="${o.name === current}" class="${o.name === current ? 'sel' : ''}"><span class="dd-name"><i class="dot" style="background:${colorOf(o.name)[1]}"></i>${esc(o.name)}</span><span class="dd-price">${o.price ? money(o.price) : ''}</span></li>`).join('') : '<li class="dd-empty">No products yet</li>';
+    list.innerHTML = options.length ? options.map((o, i) => `<li role="option" data-i="${i}" aria-selected="${o.name === current}" class="${o.name === current ? 'sel' : ''}"><span class="dd-name"><i class="dot" style="background:${colorOf(o.name, o.c)[1]}"></i>${esc(o.name)}</span><span class="dd-price">${o.price ? money(o.price) : ''}</span></li>`).join('') : '<li class="dd-empty">No products yet</li>';
   }
   function setActive(i) {
     active = Math.max(0, Math.min(options.length - 1, i));
@@ -113,16 +116,19 @@ function updateTotal() {
   $('#dtotal').textContent = money(total);
 }
 function addLine(item) {
-  const options = state.products.map(p => ({ name: p.name, price: p.price }));
-  if (item.name && !options.some(o => o.name === item.name)) options.push({ name: item.name, price: item.price || 0 });
+  const options = state.products.map(p => ({ name: p.name, price: p.price, c: p.c }));
+  if (item.name && !options.some(o => o.name === item.name)) options.push({ name: item.name, price: item.price || 0, c: item.c });
   const row = document.createElement('div');
   row.className = 'line';
   row.dataset.name = item.name || '';
-  if (item.name) row.style.cssText = colorStyle(item.name);
+  const cOf = n => (Number.isInteger(menuColour(n)) ? menuColour(n) : '');
+  row.dataset.c = Number.isInteger(item.c) ? item.c : cOf(item.name);
+  if (item.name) row.style.cssText = colorStyle(item.name, row.dataset.c === '' ? undefined : Number(row.dataset.c));
   row.dataset.price = item.name ? (typeof item.price === 'number' ? item.price : productPrice(item.name)) : 0;
   const dd = makeDropdown(options, item.name, v => {
     const o = options.find(x => x.name === v);
-    row.style.cssText = colorStyle(v);
+    row.dataset.c = options.find(x => x.name === v) && Number.isInteger(options.find(x => x.name === v).c) ? options.find(x => x.name === v).c : '';
+    row.style.cssText = colorStyle(v, row.dataset.c === '' ? undefined : Number(row.dataset.c));
     row.dataset.name = v; row.dataset.price = state.products.some(p => p.name === v) ? productPrice(v) : (o ? o.price : 0);
     updateTotal();
   });
@@ -145,6 +151,12 @@ $('#addLine').onclick = () => addLine({ name: '', qty: 1 });
 
 const pdlg = $('#pdlg');
 function renderProducts() {
+  $('#pTitle').textContent = 'Menu for ' + Store.weekLabel(state.week || Store.weekKeyOf(Date.now()));
+  const have = new Set(state.products.map(p => p.name.toLowerCase()));
+  const copyable = state.prevMenu ? state.prevMenu.items.filter(it => !have.has(it.name.toLowerCase())) : [];
+  const cb = $('#copyMenu');
+  cb.hidden = !copyable.length;
+  if (copyable.length) cb.innerHTML = `${ic('cal')} ${state.prevMenu.week === Store.addWeeks(state.week, -1) ? "Copy last weekend's menu" : 'Copy menu from ' + Store.weekLabel(state.prevMenu.week)} <small>(${copyable.length} ${copyable.length === 1 ? 'item' : 'items'})</small>`;
   $('#plist').innerHTML = state.products.map(p => `<li><span class="pn">${esc(p.name)}</span>
     <span class="pp"><span>₹</span><input type="number" min="0" step="any" value="${p.price}" data-id="${esc(p.id)}" aria-label="Price of ${esc(p.name)}"></span>
     <button data-id="${esc(p.id)}" data-del="1">Remove</button></li>`).join('') || '<li class="empty">No products yet</li>';
@@ -176,6 +188,7 @@ $('#hlist').onclick = async e => {
   else return;
   renderProducts();
 };
+$('#copyMenu').onclick = async () => { await store.copyPreviousMenu(); renderProducts(); };
 $('#histAll').onclick = async () => { await store.restoreAll(); renderProducts(); };
 $('#plist').onchange = e => {
   const inp = e.target.closest('input[data-id]'); if (!inp) return;
@@ -186,6 +199,7 @@ const dlg = $('#dlg'), form = $('#form');
 let editingId = null;
 
 function render() {
+  renderWeek();
   for (const status of FLOW) {
     const col = $(`.col[data-status=${status}]`);
     const orders = state.orders.filter(o => o.status === status).sort((a, b) => a.num - b.num);
@@ -194,8 +208,66 @@ function render() {
     $('.list', col).innerHTML = orders.length ? orders.map(card).join('') : '<div class="empty">No orders</div>';
   }
 }
+// ---- weekend bar ----
+function relWeek(w) {
+  const cur = state.currentWeek;
+  if (w === cur) return 'This weekend';
+  if (w === Store.addWeeks(cur, 1)) return 'Next weekend';
+  if (w === Store.addWeeks(cur, -1)) return 'Last weekend';
+  return w > cur ? 'Upcoming weekend' : 'Past weekend';
+}
+function weekChip(w) {
+  if (w === state.currentWeek) return new Date().getDay() === 0 ? 'Delivery day' : 'Orders open until Sat';
+  return w > state.currentWeek ? 'Planning ahead' : 'Closed';
+}
+function weekNeighbour(dir) {
+  const keys = state.weeks.map(x => x.key).sort();
+  if (dir < 0) return keys.filter(k => k < state.week).pop() || null;
+  const later = keys.filter(k => k > state.week)[0];
+  if (later) return later;
+  return state.week === state.currentWeek ? Store.addWeeks(state.currentWeek, 1) : null;
+}
+function renderWeek() {
+  if (!state.week) return;
+  const w = state.week, sum = state.weeks.find(x => x.key === w) || { orders: 0, total: 0 };
+  $('#wkSmall').textContent = relWeek(w);
+  $('#wkDate').textContent = Store.weekLabel(w);
+  $('#wkChip').textContent = weekChip(w);
+  $('#wkChip').dataset.kind = w === state.currentWeek ? 'now' : w > state.currentWeek ? 'ahead' : 'past';
+  $('#wkOrders').textContent = sum.orders;
+  $('#wkTotal').textContent = money(sum.total);
+  $('#wkPrev').disabled = !weekNeighbour(-1);
+  $('#wkNext').disabled = !weekNeighbour(1);
+  $('#menuLbl').textContent = (w === state.currentWeek ? "This weekend's" : Store.weekLabel(w)) + ' menu';
+  $('#menuChips').innerHTML = state.products.length
+    ? state.products.map(p => `<span class="mchip" style="${colorStyle(p.name, p.c)}"><i class="dot" style="background:${colorOf(p.name, p.c)[1]}"></i>${esc(p.name)} <b>${money(p.price)}</b></span>`).join('')
+    : '<span class="mnone">No menu yet. Tap Menu for this weekend to add items.</span>';
+  if (!$('#wkPop').hidden) renderWeekPop();
+}
+function renderWeekPop() {
+  const next = Store.addWeeks(state.currentWeek, 1);
+  const rows = state.weeks.slice();
+  if (!rows.some(x => x.key === next)) rows.unshift({ key: next, orders: 0, total: 0 });
+  $('#wkPop').innerHTML = rows.map(x => `<button class="row2${x.key === state.week ? ' cur' : ''}" role="option" aria-selected="${x.key === state.week}" data-week="${x.key}">
+    <span><b>${x.key === state.currentWeek || x.key === next || x.key === Store.addWeeks(state.currentWeek, -1) ? relWeek(x.key) + ' · ' : ''}${Store.weekLabel(x.key)}</b><small>${weekChip(x.key)}</small></span>
+    <span class="r">${x.orders} ${x.orders === 1 ? 'order' : 'orders'}<br>${money(x.total)}</span></button>`).join('')
+    + '<p class="foot">Tap a weekend to see its orders. Export to Excel exports the weekend you are viewing.</p>';
+}
+function toggleWeekPop(open) {
+  const pop = $('#wkPop');
+  const show = open === undefined ? pop.hidden : open;
+  pop.hidden = !show; $('#wkTitle').setAttribute('aria-expanded', String(show));
+  if (show) renderWeekPop();
+}
+$('#wkTitle').onclick = () => toggleWeekPop();
+$('#wkPop').onclick = e => { const b = e.target.closest('[data-week]'); if (b) { store.setWeek(b.dataset.week); toggleWeekPop(false); } };
+$('#wkPrev').onclick = () => { const k = weekNeighbour(-1); if (k) store.setWeek(k); };
+$('#wkNext').onclick = () => { const k = weekNeighbour(1); if (k) store.setWeek(k); };
+document.addEventListener('pointerdown', e => { if (!$('#wkPop').hidden && !e.target.closest('#wkPop, #wkTitle')) toggleWeekPop(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#wkPop').hidden) toggleWeekPop(false); });
+
 function card(o) {
-  const items = o.items.map(i => `<li style="${colorStyle(i.name)}"><span class="q">${i.qty}×</span><span class="nm">${esc(i.name)}</span>${i.price ? `<span class="lp">${money(i.qty * i.price)}</span>` : '<span></span>'}</li>`).join('');
+  const items = o.items.map(i => `<li style="${colorStyle(i.name, i.c)}"><span class="q">${i.qty}×</span><span class="nm">${esc(i.name)}</span>${i.price ? `<span class="lp">${money(i.qty * i.price)}</span>` : '<span></span>'}</li>`).join('');
   const total = orderTotal(o);
   const i = FLOW.indexOf(o.status);
   return `<div class="card" data-id="${o.id}">
@@ -214,6 +286,7 @@ function card(o) {
 function openDlg(o) {
   editingId = o ? o.id : null;
   $('#dlgTitle').textContent = o ? `Edit order #${o.num}` : 'New order';
+  $('#dlgWeek').textContent = 'For ' + Store.weekLabel(o ? (o.week || state.week) : state.week);
   $('#fName').value = o ? o.name : '';
   $('#lines').innerHTML = '';
   (o ? o.items : [{ name: '', qty: 1 }]).forEach(addLine);
@@ -224,7 +297,7 @@ function openDlg(o) {
 }
 form.addEventListener('submit', e => {
   const items = [...document.querySelectorAll('#lines .line')].map(l => ({
-    name: l.dataset.name, qty: lineQty(l), price: Number(l.dataset.price) || 0
+    name: l.dataset.name, qty: lineQty(l), price: Number(l.dataset.price) || 0, c: l.dataset.c === '' || l.dataset.c === undefined ? undefined : Number(l.dataset.c)
   })).filter(i => i.name);
   if (!items.length) { e.preventDefault(); alert('Add at least one product with a quantity.'); return; }
   const data = { name: titleCase($('#fName').value.trim()), items, notes: $('#fNotes').value.trim() };
@@ -241,7 +314,7 @@ $('#delBtn').onclick = () => {
 };
 $('#newBtn').onclick = () => openDlg(null);
 $('#clearBtn').onclick = () => {
-  if (!confirm('Remove all delivered orders?')) return;
+  if (!confirm('Remove all delivered orders from ' + Store.weekLabel(state.week) + '?')) return;
   store.clearDelivered();
 };
 document.addEventListener('click', e => {
@@ -255,17 +328,17 @@ document.addEventListener('click', e => {
 $('#exportBtn').onclick = () => {
   const q = v => '"' + String(v).replace(/"/g, '""') + '"';
   const label = { new: 'New', ready: 'Ready', delivered: 'Delivered' };
-  const rows = [['Order #', 'Status', 'Created', 'Customer', 'Items', 'Total', 'Notes']];
+  const rows = [['Order #', 'Weekend', 'Status', 'Created', 'Customer', 'Items', 'Total', 'Notes']];
   for (const o of state.orders) {
     const d = new Date(o.created), p = n => String(n).padStart(2, '0');
     const when = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-    rows.push([o.num, label[o.status], when, o.name, o.items.map(i => `${i.qty}x ${i.name}`).join('; '), orderTotal(o), o.notes]);
+    rows.push([o.num, state.week, label[o.status], when, o.name, o.items.map(i => `${i.qty}x ${i.name}`).join('; '), orderTotal(o), o.notes]);
   }
   // numbers unquoted so Excel treats Total as a number
-  const csv = '﻿' + rows.map(r => r.map((v, i) => (i === 5 && typeof v === 'number') ? v : q(v)).join(',')).join('\r\n');
+  const csv = '﻿' + rows.map(r => r.map((v, i) => (i === 6 && typeof v === 'number') ? v : q(v)).join(',')).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `amylicious-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `amylicious-orders-${state.week || new Date().toISOString().slice(0, 10)}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
